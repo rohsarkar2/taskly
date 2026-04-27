@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+
+# Yarn / npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Metro / React Native
+.metro-cache/
+*.packager.map
+*.packager.json
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcworkspace
+*.xcuserstate
+*.xcuserdata
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Android
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+android/build/
+android/captures/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Signing configs (keep credentials private!)
+android/keystore.properties
+android/app/release.keystore
+android/app/upload-keystore.jks
+
+# Hermes
+ios/hermes-engine/
+android/app/build/generated/
+
+# Buck
+buck-out/
+.buckd/
+*.keystore
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Expo (if used)
+.expo/
+.expo-shared/
+
+# Ruby / Bundler
+vendor/bundle/
+.bundle/
+
+# Misc
+*.hmap
+*.orig
+*.rej
+*.pid
+*.seed
+
+# Environment
+.env
+.env.*
