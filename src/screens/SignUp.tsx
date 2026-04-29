@@ -14,6 +14,9 @@ import { Container, Header, WhiteContainer, Button } from "../components";
 import Colors from "../configs/Colors";
 import { SignUpScreenProps } from "../navigation/NavigationTypes";
 import UserService from "../services/UserService";
+import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
+import { useAppDispatch } from "../store/hooks";
+import { setUserData } from "../store/slices/userSlice";
 
 const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [name, setName] = useState("");
@@ -23,6 +26,7 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const dispatch = useAppDispatch();
 
   const handleSignUp = async () => {
     setLoading(true);
@@ -38,6 +42,17 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
       const response = await UserService.registerUser(requestBody);
 
       if (response) {
+        const userData = response.user;
+        const accessToken = userData.accessToken;
+        const refreshToken = userData.refreshToken;
+
+        // Save tokens securely
+        await saveAccessToken(accessToken);
+        await saveRefreshToken(refreshToken);
+
+        // Update user data in Redux store
+        dispatch(setUserData(userData));
+
         setTimeout(() => {
           navigation.pop(1);
         }, 350);

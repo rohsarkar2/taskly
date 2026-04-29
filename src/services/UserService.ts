@@ -1,38 +1,34 @@
-import axios from "axios";
-import { Configs } from "../configs/Configs";
+import { axiosPrivate, axiosPublic } from "../axios/Axios";
+import { getAxoisRequestHeaders } from "../utils/Utils";
 
 export default class UserService {
   static registerUser = async (reqData = {}) => {
     try {
-      const response = await axios.post(
-        `${Configs.TASKLY_BASE_URL}/users/register`,
-        reqData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
+      const response = await axiosPublic.post(`users/register`, reqData);
       return response.data;
-    } catch (error) {
-      throw error;
+    } catch (error: any) {
+      throw new Error(error.response.data.message);
     }
   };
 
   static loginUser = async (reqData = {}) => {
     try {
-      const response = await axios.post(
-        `${Configs.TASKLY_BASE_URL}/users/login`,
-        reqData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
-      return response.status;
-    } catch (error) {
-      throw error;
+      const response = await axiosPublic.post(`users/login`, reqData);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response.data.message);
+    }
+  };
+
+  static getUserData = async () => {
+    try {
+      const options = await getAxoisRequestHeaders();
+      const response = await axiosPrivate.get(`users/initialize`, {
+        headers: options,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response.data.message);
     }
   };
 }

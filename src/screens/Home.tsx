@@ -10,6 +10,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { Container, Header, WhiteContainer, Button } from "../components";
 import { HomeScreenProps } from "../navigation/NavigationTypes";
 import Colors from "../configs/Colors";
+import { useAppSelector } from "../store/hooks";
 
 // Mock data for tasks
 const mockTasks = [
@@ -45,11 +46,12 @@ const mockTasks = [
 
 const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
   // Mock authentication state - will be replaced with actual auth context
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const user = useAppSelector((state) => state.user.userData);
+  const isAuthenticated = !!user;
   const [tasks] = useState(mockTasks);
 
-  const pendingTasks = tasks.filter((task) => !task.completed);
-  const completedTasks = tasks.filter((task) => task.completed);
+  const pendingTasks = tasks?.filter((task) => !task.completed) || [];
+  const completedTasks = tasks?.filter((task) => task.completed) || [];
 
   const handleSignIn = () => {
     props.navigation.navigate("SignIn");
@@ -160,7 +162,7 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
           <Text style={styles.statLabel}>Completed</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{tasks.length}</Text>
+          <Text style={styles.statNumber}>{tasks?.length || 0}</Text>
           <Text style={styles.statLabel}>Total</Text>
         </View>
       </View>
@@ -287,12 +289,10 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 0,
     paddingHorizontal: 16,
-    paddingBottom: 80,
-    // backgroundColor: Colors.lightBorder,
   },
   // Landing Page Styles
   landingContent: {
-    // paddingBottom: 80,
+    paddingBottom: 80,
   },
   heroSection: {
     alignItems: "center",
@@ -372,7 +372,8 @@ const styles = StyleSheet.create({
 
   // Dashboard Styles
   dashboardContent: {
-    // paddingBottom: 40,
+    paddingTop: 20,
+    paddingBottom: 80,
   },
   statsSection: {
     flexDirection: "row",
