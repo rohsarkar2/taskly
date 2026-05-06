@@ -43,8 +43,14 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
       await saveAccessToken(accessToken);
       await saveRefreshToken(refreshToken);
 
+      console.log("✅ Tokens saved successfully after login");
+      console.log("Access token:", accessToken?.substring(0, 20) + "...");
+      console.log("Refresh token:", refreshToken?.substring(0, 20) + "...");
+
       // Update user data in Redux store
       dispatch(setUserData(userData));
+
+      console.log("✅ User data dispatched to Redux:", userData.email);
 
       setTimeout(() => {
         navigation.pop(1);

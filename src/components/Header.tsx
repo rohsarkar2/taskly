@@ -6,6 +6,7 @@ import {
   View,
   ViewStyle,
   Platform,
+  Image,
 } from "react-native";
 import {
   CompositeNavigationProp,
@@ -47,7 +48,7 @@ function Header({
   const route = useRoute();
 
   // Tab screens where we show logo instead of back button
-  const tabScreens = ["Home", "Search", "Activity"];
+  const tabScreens = ["Home"];
   const isTabScreen = tabScreens.includes(route.name);
 
   // Determine if back button should be shown
@@ -74,9 +75,10 @@ function Header({
         {shouldShowLogo && !shouldShowBack ? (
           // Logo for tab screens
           <View style={styles.logoContainer}>
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoText}>T</Text>
-            </View>
+            <Image
+              source={require("../assets/images/taskly-icon.png")}
+              style={styles.logo}
+            />
           </View>
         ) : shouldShowBack ? (
           // Back button for stack screens
@@ -131,20 +133,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  logoPlaceholder: {
+  logo: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.borderGray,
-  },
-  logoText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.white,
+    resizeMode: "contain",
   },
   iconButton: {
     width: 32,
@@ -156,12 +148,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "flex-start",
     justifyContent: "center",
-    paddingHorizontal: 4,
+    // paddingHorizontal: 4,
   },
   title: {
     fontSize: 18,
-    fontWeight: "600",
-    color: Colors.black,
+    fontWeight: "500",
+    color: Colors.primaryFont,
     letterSpacing: -0.3,
     width: "80%",
   },

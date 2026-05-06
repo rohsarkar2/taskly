@@ -8,11 +8,11 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { BottomTabsParamList, RootStackParamList } from "./NavigationTypes";
 import Home from "../screens/Home";
-import Search from "../screens/Search";
 import Activity from "../screens/Activity";
 import SignIn from "../screens/SignIn";
 import Colors from "../configs/Colors";
 import SignUp from "../screens/SignUp";
+import Settings from "../screens/Settings";
 
 const RootStack = createStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<BottomTabsParamList>();
@@ -23,13 +23,13 @@ function TabsNavigator() {
       active: "home",
       inactive: "home-outline",
     },
-    Search: {
-      active: "search",
-      inactive: "search-outline",
-    },
     Activity: {
       active: "notifications",
       inactive: "notifications-outline",
+    },
+    Settings: {
+      active: "settings",
+      inactive: "settings-outline",
     },
   } as const;
 
@@ -52,8 +52,8 @@ function TabsNavigator() {
       })}
     >
       <Tabs.Screen name="Home" component={Home} />
-      <Tabs.Screen name="Search" component={Search} />
       <Tabs.Screen name="Activity" component={Activity} />
+      <Tabs.Screen name="Settings" component={Settings} />
     </Tabs.Navigator>
   );
 }

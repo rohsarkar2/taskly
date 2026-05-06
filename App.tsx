@@ -21,7 +21,7 @@ import {
   saveAccessToken,
   saveRefreshToken,
 } from "./src/utils/Utils";
-import { setUserData } from "./src/store/slices/userSlice";
+import { clearUserData, setUserData } from "./src/store/slices/userSlice";
 
 function AppContent() {
   const isDarkMode = useColorScheme() === "dark";
@@ -32,6 +32,7 @@ function AppContent() {
       const refreshToken = await getRefreshToken();
 
       if (!refreshToken) {
+        dispatch(clearUserData());
         return;
       }
 
@@ -52,7 +53,8 @@ function AppContent() {
         }
       }
     } catch (error: any) {
-      console.log("Token refresh failed:", error.message);
+      dispatch(clearUserData());
+      console.error("Error during app initialization:", error.message);
     }
   };
 

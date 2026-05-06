@@ -5,8 +5,8 @@ import type { CompositeScreenProps } from "@react-navigation/native";
 
 export type BottomTabsParamList = {
   Home: undefined;
-  Search: undefined;
   Activity: undefined;
+  Settings: undefined;
 };
 
 export type RootStackParamList = {
@@ -20,8 +20,8 @@ export type HomeScreenProps = CompositeScreenProps<
   StackScreenProps<RootStackParamList>
 >;
 
-export type SearchScreenProps = CompositeScreenProps<
-  BottomTabScreenProps<BottomTabsParamList, "Search">,
+export type SettingsScreenProps = CompositeScreenProps<
+  BottomTabScreenProps<BottomTabsParamList, "Settings">,
   StackScreenProps<RootStackParamList>
 >;
 
