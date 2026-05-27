@@ -46,7 +46,7 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const response = await TaskService.taskList();
+      const response = await TaskService.taskList(1, 100);
       setTasks(response.tasks);
       setLoading(false);
     } catch (error: any) {
