@@ -101,6 +101,7 @@ export const getAxoisRequestHeaders = async (
   isFormData = false,
 ) => {
   const token = await getAccessToken();
+
   let headers = null;
 
   if (reqMethod === Constant.GET_REQUEST) {

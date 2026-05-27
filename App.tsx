@@ -5,7 +5,7 @@
  * @format
  */
 
-import React, { useState } from "react";
+import React from "react";
 import { StatusBar, StyleSheet, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -15,18 +15,12 @@ import { store, persistor } from "./src/store";
 import Navigation from "./src/navigation/Navigation";
 import { useAppDispatch } from "./src/store/hooks";
 import UserService from "./src/services/UserService";
-import AuthService from "./src/services/AuthService";
-import {
-  getRefreshToken,
-  saveAccessToken,
-  saveRefreshToken,
-} from "./src/utils/Utils";
+import { getRefreshToken } from "./src/utils/Utils";
 import { clearUserData, setUserData } from "./src/store/slices/userSlice";
 
 function AppContent() {
   const isDarkMode = useColorScheme() === "dark";
   const dispatch = useAppDispatch();
-  const [isInitializeUser, setInitializeUser] = useState<boolean>(false);
 
   const initializeApp = async () => {
     try {
@@ -37,48 +31,21 @@ function AppContent() {
         return;
       }
 
-      // Try to refresh token
-      const refreshResponse = await AuthService.getRefreshToken();
-
-      if (refreshResponse?.accessToken) {
-        await saveAccessToken(refreshResponse.accessToken);
-
-        if (refreshResponse.refreshToken) {
-          await saveRefreshToken(refreshResponse.refreshToken);
-        }
-
-        // Set flag to trigger user data fetch
-        setInitializeUser(true);
-      }
-    } catch (error: any) {
-      dispatch(clearUserData());
-      console.error("Error during app initialization:", error.message);
-    }
-  };
-
-  const fetchUserData = async () => {
-    try {
+      // Fetch user data - interceptor will handle token refresh if needed
       const userResponse = await UserService.getUserData();
 
       if (userResponse?.user) {
         dispatch(setUserData(userResponse.user));
       }
     } catch (error: any) {
-      console.error("Error fetching user data:", error.message);
+      dispatch(clearUserData());
     }
   };
 
-  // Initial setup - refresh token
+  // Initialize app on mount
   React.useEffect(() => {
     initializeApp();
   }, []);
-
-  // Fetch user data only when initialization is complete
-  React.useEffect(() => {
-    if (isInitializeUser) {
-      fetchUserData();
-    }
-  }, [isInitializeUser]);
 
   return (
     <GestureHandlerRootView style={styles.container}>

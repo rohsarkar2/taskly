@@ -19,7 +19,10 @@ import Colors from "../configs/Colors";
 import TaskService from "../services/TaskService";
 
 const Tasks: React.FC<TasksScreenProps> = (props: TasksScreenProps) => {
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<TaskModel[]>([]);
   const [inProgressTasks, setInProgressTasks] = useState<TaskModel[]>([]);
   const [completedTasks, setCompletedTasks] = useState<TaskModel[]>([]);
@@ -293,6 +296,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   listContainer: {
-    paddingVertical: 12,
+    paddingVertical: 16,
   },
 });

@@ -428,6 +428,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     color: Colors.mutedFont,
-    marginTop: 8,
+    // marginTop: 8,
   },
 });
