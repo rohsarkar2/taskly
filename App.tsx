@@ -5,7 +5,7 @@
  * @format
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { StatusBar, StyleSheet, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -26,6 +26,7 @@ import { clearUserData, setUserData } from "./src/store/slices/userSlice";
 function AppContent() {
   const isDarkMode = useColorScheme() === "dark";
   const dispatch = useAppDispatch();
+  const [isInitializeUser, setInitializeUser] = useState<boolean>(false);
 
   const initializeApp = async () => {
     try {
@@ -36,7 +37,7 @@ function AppContent() {
         return;
       }
 
-      // Try to refresh token and get user data in background
+      // Try to refresh token
       const refreshResponse = await AuthService.getRefreshToken();
 
       if (refreshResponse?.accessToken) {
@@ -46,11 +47,8 @@ function AppContent() {
           await saveRefreshToken(refreshResponse.refreshToken);
         }
 
-        const userResponse = await UserService.getUserData();
-
-        if (userResponse?.user) {
-          dispatch(setUserData(userResponse.user));
-        }
+        // Set flag to trigger user data fetch
+        setInitializeUser(true);
       }
     } catch (error: any) {
       dispatch(clearUserData());
@@ -58,9 +56,29 @@ function AppContent() {
     }
   };
 
+  const fetchUserData = async () => {
+    try {
+      const userResponse = await UserService.getUserData();
+
+      if (userResponse?.user) {
+        dispatch(setUserData(userResponse.user));
+      }
+    } catch (error: any) {
+      console.error("Error fetching user data:", error.message);
+    }
+  };
+
+  // Initial setup - refresh token
   React.useEffect(() => {
     initializeApp();
   }, []);
+
+  // Fetch user data only when initialization is complete
+  React.useEffect(() => {
+    if (isInitializeUser) {
+      fetchUserData();
+    }
+  }, [isInitializeUser]);
 
   return (
     <GestureHandlerRootView style={styles.container}>

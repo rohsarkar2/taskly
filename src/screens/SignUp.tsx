@@ -8,6 +8,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  Alert,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Container, Header, WhiteContainer, Button } from "../components";
@@ -17,6 +19,7 @@ import UserService from "../services/UserService";
 import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
 import { useAppDispatch } from "../store/hooks";
 import { setUserData } from "../store/slices/userSlice";
+import { CommonActions } from "@react-navigation/native";
 
 const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [name, setName] = useState("");
@@ -53,19 +56,46 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
         // Update user data in Redux store
         dispatch(setUserData(userData));
 
-        setTimeout(() => {
-          navigation.pop(1);
-        }, 350);
+        setLoading(false);
+
+        Alert.alert(
+          "Success",
+          "Account created successfully! Please login to continue.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                setTimeout(() => {
+                  navigation.pop(1);
+                }, 350);
+              },
+            },
+          ],
+        );
       }
-      setLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error during registration:", error);
       setLoading(false);
+
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to create account. Please try again.";
+
+      Alert.alert("Sign Up Failed", errorMessage, [{ text: "OK" }]);
     }
   };
 
   const navigateToSignIn = () => {
-    navigation.navigate("SignIn");
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 1,
+        routes: [
+          { name: "HomeTab", params: { screen: "Home" } },
+          { name: "SignIn" },
+        ],
+      }),
+    );
   };
 
   return (
@@ -84,7 +114,10 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
               {/* Logo/Icon Section */}
               <View style={styles.logoSection}>
                 <View style={styles.logoContainer}>
-                  <Text style={styles.logoText}>T</Text>
+                  <Image
+                    source={require("../assets/images/taskly-icon.png")}
+                    style={styles.logo}
+                  />
                 </View>
                 <Text style={styles.welcomeText}>Create Account</Text>
                 <Text style={styles.subtitleText}>
@@ -248,25 +281,21 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: 20,
   },
   logoSection: {
     alignItems: "center",
     marginBottom: 32,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
+    // backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
-  logoText: {
-    fontSize: 40,
-    fontWeight: "700",
-    color: Colors.white,
+  logo: {
+    width: 100,
+    height: 100,
+    resizeMode: "contain",
   },
   welcomeText: {
     fontSize: 24,

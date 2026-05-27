@@ -13,6 +13,7 @@ export type RootStackParamList = {
   HomeTab: NavigatorScreenParams<BottomTabsParamList>;
   SignIn: undefined;
   SignUp: undefined;
+  CreateTask: undefined;
 };
 
 export type HomeScreenProps = CompositeScreenProps<
@@ -33,3 +34,8 @@ export type ActivityScreenProps = CompositeScreenProps<
 export type SignInScreenProps = StackScreenProps<RootStackParamList, "SignIn">;
 
 export type SignUpScreenProps = StackScreenProps<RootStackParamList, "SignUp">;
+
+export type CreateTaskScreenProps = StackScreenProps<
+  RootStackParamList,
+  "CreateTask"
+>;

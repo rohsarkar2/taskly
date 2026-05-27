@@ -22,6 +22,19 @@ const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const isCompleted = status === "completed";
 
+  // Strip HTML tags for card preview
+  const getPlainTextDescription = (html: string): string => {
+    return html
+      .replace(/<[^>]*>/g, " ") // Remove HTML tags
+      .replace(/&nbsp;/g, " ") // Replace non-breaking spaces
+      .replace(/&amp;/g, "&") // Replace HTML entities
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, " ") // Collapse multiple spaces
+      .trim();
+  };
+
   return (
     <TouchableOpacity
       style={[styles.container, isCompleted && styles.completedContainer]}
@@ -48,8 +61,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
           <Text
             style={[styles.description, isCompleted && styles.completedText]}
             numberOfLines={2}
+            ellipsizeMode="tail"
           >
-            {description}
+            {getPlainTextDescription(description)}
           </Text>
         ) : null}
         <View style={styles.dateContainer}>

@@ -8,6 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Container, Header, WhiteContainer, Button } from "../components";
@@ -43,14 +44,8 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
       await saveAccessToken(accessToken);
       await saveRefreshToken(refreshToken);
 
-      console.log("✅ Tokens saved successfully after login");
-      console.log("Access token:", accessToken?.substring(0, 20) + "...");
-      console.log("Refresh token:", refreshToken?.substring(0, 20) + "...");
-
       // Update user data in Redux store
       dispatch(setUserData(userData));
-
-      console.log("✅ User data dispatched to Redux:", userData.email);
 
       setTimeout(() => {
         navigation.pop(1);
@@ -83,7 +78,10 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
               {/* Logo/Icon Section */}
               <View style={styles.logoSection}>
                 <View style={styles.logoContainer}>
-                  <Text style={styles.logoText}>T</Text>
+                  <Image
+                    source={require("../assets/images/taskly-icon.png")}
+                    style={styles.logo}
+                  />
                 </View>
                 <Text style={styles.welcomeText}>Welcome Back!</Text>
                 <Text style={styles.subtitleText}>
@@ -193,25 +191,21 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: 20,
   },
   logoSection: {
     alignItems: "center",
     marginBottom: 40,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
+    // backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
-  logoText: {
-    fontSize: 40,
-    fontWeight: "700",
-    color: Colors.white,
+  logo: {
+    width: 100,
+    height: 100,
+    resizeMode: "contain",
   },
   welcomeText: {
     fontSize: 24,

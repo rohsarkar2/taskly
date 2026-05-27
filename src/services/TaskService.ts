@@ -14,4 +14,17 @@ export default class TaskService {
       throw new Error(error.response.data.message);
     }
   };
+
+  static createTask = async (reqBody = {}) => {
+    try {
+      const options = await getAxoisRequestHeaders();
+
+      const response = await axiosPrivate.post(`tasks/create`, reqBody, {
+        headers: options,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response.data.message);
+    }
+  };
 }

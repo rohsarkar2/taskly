@@ -26,9 +26,9 @@ axiosPrivate.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = await getRefreshToken();
+        const token = await getRefreshToken();
 
-        if (!refreshToken) {
+        if (!token) {
           await clearAllTokens();
           return Promise.reject(error);
         }
@@ -37,7 +37,7 @@ axiosPrivate.interceptors.response.use(
         const response = await axiosPrivate.get(
           `${Configs.TASKLY_BASE_URL}users/refresh-token`,
           {
-            headers: { Authorization: `Bearer ${refreshToken}` },
+            headers: { Authorization: `Bearer ${token}` },
           },
         );
 

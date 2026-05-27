@@ -13,6 +13,7 @@ import SignIn from "../screens/SignIn";
 import Colors from "../configs/Colors";
 import SignUp from "../screens/SignUp";
 import Settings from "../screens/Settings";
+import CreateTask from "../screens/CreateTask";
 
 const RootStack = createStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<BottomTabsParamList>();
@@ -71,6 +72,7 @@ export default function Navigation() {
         <RootStack.Screen name="HomeTab" component={TabsNavigator} />
         <RootStack.Screen name="SignIn" component={SignIn} />
         <RootStack.Screen name="SignUp" component={SignUp} />
+        <RootStack.Screen name="CreateTask" component={CreateTask} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

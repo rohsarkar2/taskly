@@ -13,6 +13,7 @@ import {
   WhiteContainer,
   Button,
   TaskCard,
+  Loader,
 } from "../components";
 import { HomeScreenProps } from "../navigation/NavigationTypes";
 import Colors from "../configs/Colors";
@@ -58,8 +59,12 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
     props.navigation.navigate("SignIn");
   };
 
+  const gotoAddTask = () => {
+    props.navigation.navigate("CreateTask");
+  };
+
   const pendingTasks = tasks?.filter((task) => task.status === "pending") || [];
-  console.log(pendingTasks);
+
   const completedTasks =
     tasks?.filter((task) => task.status === "completed") || [];
 
@@ -251,13 +256,15 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
           </View>
         </View>
       </View>
-
       {/* Add Task Button */}
-      <TouchableOpacity style={styles.addTaskButton} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.addTaskButton}
+        activeOpacity={0.7}
+        onPress={gotoAddTask}
+      >
         <Ionicons name="add-circle" size={24} color={Colors.white} />
         <Text style={styles.addTaskButtonText}>Add New Task</Text>
       </TouchableOpacity>
-
       {/* Pending Tasks */}
       <View style={styles.taskSection}>
         <Text style={styles.taskSectionTitle}>Pending Tasks</Text>
@@ -277,7 +284,6 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
           <Text style={styles.emptyText}>No pending tasks</Text>
         )}
       </View>
-
       {/* Completed Tasks */}
       <View style={styles.taskSection}>
         <Text style={styles.taskSectionTitle}>Completed Tasks</Text>
@@ -304,7 +310,15 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
     <Container>
       <Header title="Taskly" showLogo />
       <WhiteContainer style={styles.container}>
-        {isAuthenticated ? renderDashboard() : renderLandingPage()}
+        {/* {loading && <Loader size="large" fullScreen />}
+        {isAuthenticated ? renderDashboard() : renderLandingPage()} */}
+        {loading ? (
+          <Loader size="large" fullScreen />
+        ) : !loading && isAuthenticated ? (
+          renderDashboard()
+        ) : (
+          renderLandingPage()
+        )}
       </WhiteContainer>
     </Container>
   );
@@ -402,6 +416,11 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 80,
   },
+  loaderContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   statsSection: {
     marginBottom: 24,
   },
@@ -415,14 +434,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 20,
     padding: 18,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
     borderWidth: 1,
     borderColor: "#F0F0F0",
   },
@@ -477,15 +488,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    // shadowOffset: {
+    //   width: 0,
+    //   height: 4,
+    // },
+    // shadowOpacity: 0.1,
+    // shadowRadius: 12,
+    // elevation: 5,
     borderWidth: 1,
-    borderColor: "#F0F0F0",
+    borderColor: Colors.lightBorder,
   },
   totalStatContent: {
     flexDirection: "row",

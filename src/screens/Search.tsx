@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { Container, Header, WhiteContainer } from "../components";
+import { Container, Header, WhiteContainer, RenderHtml } from "../components";
 import { SearchScreenProps } from "../navigation/NavigationTypes";
 import Colors from "../configs/Colors";
 
@@ -208,9 +208,11 @@ const Search: React.FC<SearchScreenProps> = (props: SearchScreenProps) => {
                       >
                         {task.title}
                       </Text>
-                      <Text style={styles.taskDescription}>
-                        {task.description}
-                      </Text>
+                      <RenderHtml
+                        content={task.description}
+                        style={styles.taskDescription}
+                        collapsedLines={2}
+                      />
                       <View style={styles.taskMeta}>
                         <Ionicons
                           name="calendar-outline"
