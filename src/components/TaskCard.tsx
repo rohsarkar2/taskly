@@ -8,7 +8,7 @@ export type TaskCardProps = {
   title: string;
   description: string;
   dueDate: string;
-  status: "pending" | "completed";
+  status: "pending" | "in-progress" | "completed";
   onPress?: (id: string) => void;
 };
 
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.borderGray,

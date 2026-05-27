@@ -14,6 +14,7 @@ import Colors from "../configs/Colors";
 import SignUp from "../screens/SignUp";
 import Settings from "../screens/Settings";
 import CreateTask from "../screens/CreateTask";
+import Tasks from "../screens/Tasks";
 
 const RootStack = createStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<BottomTabsParamList>();
@@ -24,9 +25,9 @@ function TabsNavigator() {
       active: "home",
       inactive: "home-outline",
     },
-    Activity: {
-      active: "notifications",
-      inactive: "notifications-outline",
+    Tasks: {
+      active: "list",
+      inactive: "list-outline",
     },
     Settings: {
       active: "settings",
@@ -53,7 +54,7 @@ function TabsNavigator() {
       })}
     >
       <Tabs.Screen name="Home" component={Home} />
-      <Tabs.Screen name="Activity" component={Activity} />
+      <Tabs.Screen name="Tasks" component={Tasks} />
       <Tabs.Screen name="Settings" component={Settings} />
     </Tabs.Navigator>
   );

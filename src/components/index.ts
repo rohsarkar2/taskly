@@ -6,4 +6,12 @@ import TaskCard from "./TaskCard";
 import Loader from "./Loader";
 import RenderHtml from "./RenderHtml";
 
-export { Header, Container, WhiteContainer, Button, TaskCard, Loader, RenderHtml };
+export {
+  Header,
+  Container,
+  WhiteContainer,
+  Button,
+  TaskCard,
+  Loader,
+  RenderHtml,
+};

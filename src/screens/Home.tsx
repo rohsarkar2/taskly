@@ -63,10 +63,19 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
     props.navigation.navigate("CreateTask");
   };
 
-  const pendingTasks = tasks?.filter((task) => task.status === "pending") || [];
+  const pendingTasks =
+    tasks
+      ?.filter((task) => task.status === "pending")
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+      ) || [];
 
   const completedTasks =
-    tasks?.filter((task) => task.status === "completed") || [];
+    tasks
+      ?.filter((task) => task.status === "completed")
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+      ) || [];
 
   // Landing page for non-authenticated users
   const renderLandingPage = () => (
@@ -267,26 +276,38 @@ const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
       </TouchableOpacity>
       {/* Pending Tasks */}
       <View style={styles.taskSection}>
-        <Text style={styles.taskSectionTitle}>Pending Tasks</Text>
+        <View style={styles.taskSectionHeader}>
+          <Text style={styles.taskSectionTitle}>Recent Pending Tasks</Text>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Text style={styles.seeAllText}>See All</Text>
+          </TouchableOpacity>
+        </View>
         {pendingTasks.length > 0 ? (
-          pendingTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              id={task.id}
-              title={task.title}
-              description={task.description}
-              dueDate={task.dueDate}
-              status="pending"
-              onPress={(id) => console.log("View task:", id)}
-            />
-          ))
+          pendingTasks
+            .slice(0, 2)
+            .map((task) => (
+              <TaskCard
+                key={task.id}
+                id={task.id}
+                title={task.title}
+                description={task.description}
+                dueDate={task.dueDate}
+                status="pending"
+                onPress={(id) => console.log("View task:", id)}
+              />
+            ))
         ) : (
           <Text style={styles.emptyText}>No pending tasks</Text>
         )}
       </View>
       {/* Completed Tasks */}
       <View style={styles.taskSection}>
-        <Text style={styles.taskSectionTitle}>Completed Tasks</Text>
+        <View style={styles.taskSectionHeader}>
+          <Text style={styles.taskSectionTitle}>Recent Completed Tasks</Text>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Text style={styles.seeAllText}>See All</Text>
+          </TouchableOpacity>
+        </View>
         {completedTasks.length > 0 ? (
           completedTasks.map((task) => (
             <TaskCard
@@ -569,11 +590,21 @@ const styles = StyleSheet.create({
   taskSection: {
     marginBottom: 24,
   },
+  taskSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   taskSectionTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: Colors.black,
-    marginBottom: 12,
+  },
+  seeAllText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: "400",
   },
   emptyText: {
     fontSize: 14,
