@@ -1,6 +1,5 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
+ * Taskly
  *
  * @format
  */
@@ -13,40 +12,12 @@ import { Provider } from "react-redux";
 import { PersistGate } from "redux-persist/integration/react";
 import { store, persistor } from "./src/store";
 import Navigation from "./src/navigation/Navigation";
-import { useAppDispatch } from "./src/store/hooks";
-import UserService from "./src/services/UserService";
-import { getRefreshToken } from "./src/utils/Utils";
-import { clearUserData, setUserData } from "./src/store/slices/userSlice";
 
 function AppContent() {
   const isDarkMode = useColorScheme() === "dark";
-  const dispatch = useAppDispatch();
 
-  const initializeApp = async () => {
-    try {
-      const refreshToken = await getRefreshToken();
-
-      if (!refreshToken) {
-        dispatch(clearUserData());
-        return;
-      }
-
-      // Fetch user data - interceptor will handle token refresh if needed
-      const userResponse = await UserService.getUserData();
-
-      if (userResponse?.user) {
-        dispatch(setUserData(userResponse.user));
-      }
-    } catch (error: any) {
-      dispatch(clearUserData());
-    }
-  };
-
-  // Initialize app on mount
-  React.useEffect(() => {
-    initializeApp();
-  }, []);
-
+  // The Splash screen decides where to land once the persisted session is
+  // rehydrated. Token refresh moves back in here when the API is wired up.
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>

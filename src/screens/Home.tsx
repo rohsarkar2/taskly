@@ -1,345 +1,289 @@
+import React, { useMemo } from "react";
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
+  View,
 } from "react-native";
-import React, { useEffect, useState } from "react";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
+  Avatar,
   Container,
   Header,
-  WhiteContainer,
-  Button,
+  SectionHeader,
+  StatCard,
   TaskCard,
-  Loader,
+  TimelineItem,
+  WhiteContainer,
 } from "../components";
-import { HomeScreenProps } from "../navigation/NavigationTypes";
 import Colors from "../configs/Colors";
-import { useAppSelector } from "../store/hooks";
+import {
+  getPendingApprovalsFor,
+  getTasksAssignedTo,
+  organization,
+  recentActivity,
+} from "../data";
 import { TaskModel } from "../models/task";
-import TaskService from "../services/TaskService";
+import { HomeScreenProps } from "../navigation/NavigationTypes";
+import { useAppSelector } from "../store/hooks";
+import { daysUntil, greetingForNow, isOverdue } from "../utils/Formatters";
 
-const Home: React.FC<HomeScreenProps> = (props: HomeScreenProps) => {
-  // Mock authentication state - will be replaced with actual auth context
+const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
   const user = useAppSelector((state) => state.user.userData);
-  const isAuthenticated = !!user;
-  const [tasks, setTasks] = useState<TaskModel[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
 
-  // const pendingTasks = tasks?.filter((task) => !task.completed) || [];
-  // const completedTasks = tasks?.filter((task) => task.completed) || [];
+  const {
+    myTasks,
+    todayTasks,
+    inProgressTasks,
+    pendingApprovalTasks,
+    completedTasks,
+    overdueTasks,
+    upcomingTasks,
+    approvalQueue,
+  } = useMemo(() => {
+    const assigned = user ? getTasksAssignedTo(user.id) : [];
+    const open = assigned.filter((task) => task.status !== "completed");
 
-  useEffect(() => {
-    const unsubscribe = props.navigation.addListener("focus", () => {
-      if (isAuthenticated) {
-        fetchTasks();
-      } else {
-        setTasks([]);
-      }
-    });
+    return {
+      myTasks: assigned,
+      todayTasks: open.filter((task) => daysUntil(task.dueDate) === 0),
+      inProgressTasks: assigned.filter((task) => task.status === "in-progress"),
+      pendingApprovalTasks: assigned.filter(
+        (task) => task.status === "pending-approval"
+      ),
+      completedTasks: assigned.filter((task) => task.status === "completed"),
+      overdueTasks: open.filter((task) => isOverdue(task.dueDate, task.status)),
+      upcomingTasks: open
+        .filter((task) => daysUntil(task.dueDate) > 0)
+        .sort(
+          (a, b) =>
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        ),
+      approvalQueue: user ? getPendingApprovalsFor(user) : [],
+    };
+  }, [user]);
 
-    return unsubscribe;
-  }, [props.navigation, isAuthenticated]);
+  const isApprover = user?.role === "team-lead" || user?.role === "manager";
 
-  const fetchTasks = async () => {
-    setLoading(true);
-    try {
-      const response = await TaskService.taskList(1, 100);
-      setTasks(response.tasks);
-      setLoading(false);
-    } catch (error: any) {
-      setTasks([]);
-      setLoading(false);
-    }
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 700);
   };
 
-  const handleSignIn = () => {
-    props.navigation.navigate("SignIn");
-  };
+  const gotoTaskDetails = (task: TaskModel) =>
+    navigation.navigate("TaskDetails", { taskId: task.id });
 
-  const gotoAddTask = () => {
-    props.navigation.navigate("CreateTask");
-  };
-
-  const pendingTasks =
-    tasks
-      ?.filter((task) => task.status === "pending")
-      .sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
-      ) || [];
-
-  const completedTasks =
-    tasks
-      ?.filter((task) => task.status === "completed")
-      .sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
-      ) || [];
-
-  // Landing page for non-authenticated users
-  const renderLandingPage = () => (
-    <ScrollView
-      contentContainerStyle={styles.landingContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Hero Section */}
-      <View style={styles.heroSection}>
-        <View style={styles.heroIcon}>
-          <Ionicons name="checkmark-done" size={48} color={Colors.white} />
-        </View>
-        <Text style={styles.heroTitle}>Welcome to Taskly</Text>
-        <Text style={styles.heroSubtitle}>
-          Your simple and powerful task manager
+  const renderGreeting = () => (
+    <View style={styles.greetingRow}>
+      <View style={styles.greetingText}>
+        <Text style={styles.greeting}>
+          {greetingForNow()}, {user?.name?.split(" ")[0] ?? "there"} 👋
         </Text>
+        <Text style={styles.organization}>{organization.name}</Text>
       </View>
-
-      {/* Features Section */}
-      <View style={styles.featuresSection}>
-        <Text style={styles.sectionTitle}>Why Taskly?</Text>
-
-        <View style={styles.featureItem}>
-          <View style={styles.featureIcon}>
-            <Ionicons name="list" size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Organize Your Tasks</Text>
-            <Text style={styles.featureDescription}>
-              Create, edit, and manage your daily tasks with ease
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.featureItem}>
-          <View style={styles.featureIcon}>
-            <Ionicons name="time" size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Track Deadlines</Text>
-            <Text style={styles.featureDescription}>
-              Set due dates and never miss important deadlines
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.featureItem}>
-          <View style={styles.featureIcon}>
-            <Ionicons
-              name="checkmark-circle"
-              size={24}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Mark Complete</Text>
-            <Text style={styles.featureDescription}>
-              Track your progress with completed and pending tasks
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.featureItem}>
-          <View style={styles.featureIcon}>
-            <Ionicons name="search" size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Quick Search</Text>
-            <Text style={styles.featureDescription}>
-              Find any task instantly with powerful search
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* CTA Section */}
-      <View style={styles.ctaSection}>
-        <Button
-          title="Get Started"
-          onPress={handleSignIn}
-          style={[styles.ctaButton]}
-        />
-        <Text style={styles.ctaText}>
-          Start organizing your tasks today and boost your productivity!
-        </Text>
-      </View>
-    </ScrollView>
-  );
-
-  // Dashboard for authenticated users
-  const renderDashboard = () => (
-    <ScrollView
-      contentContainerStyle={styles.dashboardContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Stats Section */}
-      <View style={styles.statsSection}>
-        <View style={styles.statsGrid}>
-          <View style={[styles.statCard, styles.primaryStatCard]}>
-            <View style={styles.statCardHeader}>
-              <View style={styles.statIconWrapper}>
-                <Ionicons name="hourglass-outline" size={22} color="#FF6B35" />
-              </View>
-              <Text style={styles.statTrend}>●</Text>
-            </View>
-            <Text style={styles.statValue}>{pendingTasks.length}</Text>
-            <Text style={styles.statTitle}>Pending</Text>
-            <View style={styles.statProgress}>
-              <View
-                style={[
-                  styles.statProgressBar,
-                  {
-                    width: `${
-                      tasks.length > 0
-                        ? (pendingTasks.length / tasks.length) * 100
-                        : 0
-                    }%`,
-                    backgroundColor: "#FF6B35",
-                  },
-                ]}
-              />
-            </View>
-          </View>
-
-          <View style={[styles.statCard, styles.primaryStatCard]}>
-            <View style={styles.statCardHeader}>
-              <View style={styles.statIconWrapper}>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={22}
-                  color="#00B894"
-                />
-              </View>
-              <Text style={[styles.statTrend, { color: "#00B894" }]}>●</Text>
-            </View>
-            <Text style={styles.statValue}>{completedTasks.length}</Text>
-            <Text style={styles.statTitle}>Completed</Text>
-            <View style={styles.statProgress}>
-              <View
-                style={[
-                  styles.statProgressBar,
-                  {
-                    width: `${
-                      tasks.length > 0
-                        ? (completedTasks.length / tasks.length) * 100
-                        : 0
-                    }%`,
-                    backgroundColor: "#00B894",
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.totalStatCard}>
-          <View style={styles.totalStatContent}>
-            <View style={styles.totalStatLeft}>
-              <Text style={styles.totalStatLabel}>Total Tasks</Text>
-              <Text style={styles.totalStatValue}>{tasks?.length || 0}</Text>
-            </View>
-            {/* <View style={styles.totalStatRight}>
-              <View style={styles.totalStatIconBg}>
-                <Ionicons
-                  name="bar-chart-outline"
-                  size={28}
-                  color={Colors.primary}
-                />
-              </View>
-            </View> */}
-          </View>
-          <View style={styles.totalStatDivider} />
-          <View style={styles.totalStatFooter}>
-            <View style={styles.totalStatItem}>
-              <Ionicons name="trending-up" size={14} color="#00B894" />
-              <Text style={styles.totalStatItemText}>
-                {tasks.length > 0
-                  ? Math.round((completedTasks.length / tasks.length) * 100)
-                  : 0}
-                % Done
-              </Text>
-            </View>
-            <View style={styles.totalStatItem}>
-              <Ionicons name="time-outline" size={14} color="#636E72" />
-              <Text style={styles.totalStatItemText}>Updated now</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-      {/* Add Task Button */}
       <TouchableOpacity
-        style={styles.addTaskButton}
+        onPress={() => navigation.navigate("Profile")}
         activeOpacity={0.7}
-        onPress={gotoAddTask}
       >
-        <Ionicons name="add-circle" size={24} color={Colors.white} />
-        <Text style={styles.addTaskButtonText}>Add New Task</Text>
+        <Avatar name={user?.name ?? "User"} image={user?.image} size={42} />
       </TouchableOpacity>
-      {/* Pending Tasks */}
-      <View style={styles.taskSection}>
-        <View style={styles.taskSectionHeader}>
-          <Text style={styles.taskSectionTitle}>Recent Pending Tasks</Text>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        {pendingTasks.length > 0 ? (
-          pendingTasks
-            .slice(0, 2)
-            .map((task) => (
-              <TaskCard
-                key={task.id}
-                id={task.id}
-                title={task.title}
-                description={task.description}
-                dueDate={task.dueDate}
-                status="pending"
-                onPress={(id) => console.log("View task:", id)}
-              />
-            ))
-        ) : (
-          <Text style={styles.emptyText}>No pending tasks</Text>
-        )}
-      </View>
-      {/* Completed Tasks */}
-      <View style={styles.taskSection}>
-        <View style={styles.taskSectionHeader}>
-          <Text style={styles.taskSectionTitle}>Recent Completed Tasks</Text>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        {completedTasks.length > 0 ? (
-          completedTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              id={task.id}
-              title={task.title}
-              description={task.description}
-              dueDate={task.dueDate}
-              status="completed"
-              onPress={(id) => console.log("View task:", id)}
-            />
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No completed tasks</Text>
-        )}
-      </View>
-    </ScrollView>
+    </View>
   );
 
   return (
     <Container>
       <Header title="Taskly" showLogo />
       <WhiteContainer style={styles.container}>
-        {/* {loading && <Loader size="large" fullScreen />}
-        {isAuthenticated ? renderDashboard() : renderLandingPage()} */}
-        {loading ? (
-          <Loader size="large" fullScreen />
-        ) : !loading && isAuthenticated ? (
-          renderDashboard()
-        ) : (
-          renderLandingPage()
-        )}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
+        >
+          {renderGreeting()}
+
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <StatCard
+              icon="today-outline"
+              label="Today"
+              value={todayTasks.length}
+              color={Colors.primary}
+              onPress={() => navigation.navigate("MyTasks")}
+            />
+            <StatCard
+              icon="play-circle-outline"
+              label="In Progress"
+              value={inProgressTasks.length}
+              color={Colors.statusInProgress}
+              onPress={() =>
+                navigation.navigate("Tasks", { filter: "in-progress" })
+              }
+            />
+          </View>
+          <View style={styles.statsRow}>
+            <StatCard
+              icon="hourglass-outline"
+              label="Awaiting"
+              value={pendingApprovalTasks.length}
+              color={Colors.statusPendingApproval}
+              onPress={() =>
+                navigation.navigate("Tasks", { filter: "pending-approval" })
+              }
+            />
+            <StatCard
+              icon="checkmark-circle-outline"
+              label="Completed"
+              value={completedTasks.length}
+              color={Colors.success}
+              onPress={() =>
+                navigation.navigate("Tasks", { filter: "completed" })
+              }
+            />
+          </View>
+
+          {/* Approver call to action */}
+          {isApprover && approvalQueue.length > 0 ? (
+            <TouchableOpacity
+              style={styles.approvalBanner}
+              onPress={() => navigation.navigate("PendingApprovals")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.approvalIcon}>
+                <Ionicons
+                  name="shield-checkmark"
+                  size={20}
+                  color={Colors.white}
+                />
+              </View>
+              <View style={styles.approvalText}>
+                <Text style={styles.approvalTitle}>
+                  {approvalQueue.length} task
+                  {approvalQueue.length === 1 ? "" : "s"} waiting on you
+                </Text>
+                <Text style={styles.approvalSubtitle}>
+                  Review and approve pending work
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.white} />
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Overdue */}
+          {overdueTasks.length > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader
+                title={`Overdue (${overdueTasks.length})`}
+                actionTitle="See all"
+                onActionPress={() => navigation.navigate("MyTasks")}
+              />
+              {overdueTasks.slice(0, 2).map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onPress={gotoTaskDetails}
+                  showAssignee={false}
+                />
+              ))}
+            </View>
+          ) : null}
+
+          {/* Quick actions */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.primaryAction}
+              onPress={() => navigation.navigate("CreateTask")}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={20} color={Colors.white} />
+              <Text style={styles.primaryActionText}>New Task</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryAction}
+              onPress={() => navigation.navigate("MyTasks")}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={Colors.primary}
+              />
+              <Text style={styles.secondaryActionText}>My Tasks</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* My tasks */}
+          <View style={styles.section}>
+            <SectionHeader
+              title="My Tasks"
+              actionTitle="See all"
+              onActionPress={() =>
+                navigation.navigate("Tasks", { filter: "my-tasks" })
+              }
+            />
+            {myTasks.filter((task) => task.status !== "completed").length >
+            0 ? (
+              myTasks
+                .filter((task) => task.status !== "completed")
+                .slice(0, 3)
+                .map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onPress={gotoTaskDetails}
+                    showAssignee={false}
+                  />
+                ))
+            ) : (
+              <Text style={styles.empty}>
+                Nothing assigned to you right now
+              </Text>
+            )}
+          </View>
+
+          {/* Upcoming */}
+          <View style={styles.section}>
+            <SectionHeader title="Upcoming" />
+            {upcomingTasks.length > 0 ? (
+              upcomingTasks
+                .slice(0, 3)
+                .map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onPress={gotoTaskDetails}
+                    showAssignee={false}
+                  />
+                ))
+            ) : (
+              <Text style={styles.empty}>No upcoming deadlines</Text>
+            )}
+          </View>
+
+          {/* Recent activity */}
+          <View style={styles.section}>
+            <SectionHeader title="Recent Activity" />
+            <View style={styles.activityCard}>
+              {recentActivity.slice(0, 5).map((item, index, list) => (
+                <TimelineItem
+                  key={item.id}
+                  item={item}
+                  isLast={index === list.length - 1}
+                  showDate
+                />
+              ))}
+            </View>
+          </View>
+        </ScrollView>
       </WhiteContainer>
     </Container>
   );
@@ -352,264 +296,116 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingHorizontal: 16,
   },
-  // Landing Page Styles
-  landingContent: {
-    paddingBottom: 80,
+  content: {
+    paddingTop: 16,
+    paddingBottom: 90,
   },
-  heroSection: {
+  greetingRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 20,
+    justifyContent: "space-between",
+    marginBottom: 20,
+    gap: 12,
   },
-  heroIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
+  greetingText: {
+    flex: 1,
   },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: Colors.black,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: Colors.mutedFont,
-    textAlign: "center",
-  },
-  featuresSection: {
-    marginTop: 20,
-  },
-  sectionTitle: {
+  greeting: {
     fontSize: 20,
     fontWeight: "700",
     color: Colors.black,
-    marginBottom: 20,
+    letterSpacing: -0.3,
   },
-  featureItem: {
-    flexDirection: "row",
-    marginBottom: 24,
-  },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.secondary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 16,
-  },
-  featureText: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontSize: 14,
+  organization: {
+    fontSize: 13,
     color: Colors.mutedFont,
-    lineHeight: 20,
+    marginTop: 3,
   },
-  ctaSection: {
-    // marginTop: 32,
-    alignItems: "center",
-  },
-  ctaButton: {
-    width: "100%",
-    marginBottom: 16,
-  },
-  ctaText: {
-    fontSize: 14,
-    color: Colors.mutedFont,
-    textAlign: "center",
-    paddingHorizontal: 20,
-  },
-
-  // Dashboard Styles
-  dashboardContent: {
-    paddingTop: 20,
-    paddingBottom: 80,
-  },
-  loaderContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statsSection: {
-    marginBottom: 24,
-  },
-  statsGrid: {
+  statsRow: {
     flexDirection: "row",
-    marginBottom: 16,
     gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#F0F0F0",
-  },
-  primaryStatCard: {
-    backgroundColor: "#FFFFFF",
-  },
-  statCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 12,
   },
-  statIconWrapper: {
+  approvalBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 8,
+    gap: 12,
+  },
+  approvalIcon: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     alignItems: "center",
     justifyContent: "center",
   },
-  statTrend: {
-    fontSize: 18,
-    color: "#FF6B35",
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#2D3436",
-    marginBottom: 4,
-    letterSpacing: -1,
-  },
-  statTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#636E72",
-    marginBottom: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  statProgress: {
-    height: 4,
-    backgroundColor: "#F0F0F0",
-    borderRadius: 2,
-    overflow: "hidden",
-  },
-  statProgressBar: {
-    height: "100%",
-    borderRadius: 2,
-  },
-  totalStatCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#000",
-    // shadowOffset: {
-    //   width: 0,
-    //   height: 4,
-    // },
-    // shadowOpacity: 0.1,
-    // shadowRadius: 12,
-    // elevation: 5,
-    borderWidth: 1,
-    borderColor: Colors.lightBorder,
-  },
-  totalStatContent: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  totalStatLeft: {
+  approvalText: {
     flex: 1,
   },
-  totalStatLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#636E72",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  totalStatValue: {
-    fontSize: 36,
+  approvalTitle: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#2D3436",
-    letterSpacing: -1,
+    color: Colors.white,
   },
-  totalStatRight: {
-    marginLeft: 16,
+  approvalSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
   },
-  totalStatIconBg: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    backgroundColor: Colors.secondary,
+  quickActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+    marginBottom: 28,
+  },
+  primaryAction: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-  },
-  totalStatDivider: {
-    height: 1,
-    backgroundColor: "#F0F0F0",
-    marginBottom: 12,
-  },
-  totalStatFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  totalStatItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  totalStatItemText: {
-    fontSize: 12,
-    color: "#636E72",
-    marginLeft: 6,
-    fontWeight: "500",
-  },
-  addTaskButton: {
-    flexDirection: "row",
     backgroundColor: Colors.primary,
     borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
+    paddingVertical: 14,
+    gap: 8,
   },
-  addTaskButtonText: {
-    fontSize: 16,
+  primaryActionText: {
+    fontSize: 15,
     fontWeight: "600",
     color: Colors.white,
-    marginLeft: 8,
   },
-  taskSection: {
-    marginBottom: 24,
-  },
-  taskSectionHeader: {
+  secondaryAction: {
+    flex: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    justifyContent: "center",
+    backgroundColor: Colors.secondary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
   },
-  taskSectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.black,
-  },
-  seeAllText: {
-    fontSize: 14,
+  secondaryActionText: {
+    fontSize: 15,
+    fontWeight: "600",
     color: Colors.primary,
-    fontWeight: "400",
   },
-  emptyText: {
+  section: {
+    marginBottom: 28,
+  },
+  empty: {
     fontSize: 14,
     color: Colors.mutedFont,
     textAlign: "center",
     paddingVertical: 20,
+  },
+  activityCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderGray,
+    padding: 16,
   },
 });

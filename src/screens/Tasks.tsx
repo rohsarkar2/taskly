@@ -1,464 +1,340 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  RefreshControl,
 } from "react-native";
-import { TasksScreenProps } from "../navigation/NavigationTypes";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Container,
+  EmptyState,
   Header,
-  Loader,
+  OptionSheet,
+  SearchBar,
+  SegmentedTabs,
   TaskCard,
   WhiteContainer,
 } from "../components";
-import { TaskModel } from "../models/task";
+import type { SheetOption, TabItem } from "../components";
 import Colors from "../configs/Colors";
-import TaskService from "../services/TaskService";
-import Ionicons from "react-native-vector-icons/Ionicons";
+import { getProjectsForUser, tasks as allTasks } from "../data";
+import { TaskModel, TaskPriority } from "../models/task";
+import { TaskFilter, TasksScreenProps } from "../navigation/NavigationTypes";
+import { useAppSelector } from "../store/hooks";
+import { daysUntil } from "../utils/Formatters";
 
-const Tasks: React.FC<TasksScreenProps> = (props: TasksScreenProps) => {
-  const LIMIT = 10;
+type SortKey = "due-date" | "priority" | "recent";
 
-  // Separate state for pending tasks
-  const [pendingTasks, setPendingTasks] = useState<TaskModel[]>([]);
-  const [pendingTasksLoading, setPendingTasksLoading] = useState(true);
-  const [pendingTasksPage, setPendingTasksPage] = useState(1);
-  const [pendingTasksHasMore, setPendingTasksHasMore] = useState(true);
-  const [pendingTasksRefreshing, setPendingTasksRefreshing] = useState(false);
-  const [pendingTasksLoadingMore, setPendingTasksLoadingMore] = useState(false);
+const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
 
-  // Separate states for in-progress tasks
-  const [inProgressTasks, setInProgressTasks] = useState<TaskModel[]>([]);
-  const [inProgressTasksLoading, setInProgressTasksLoading] = useState(true);
-  const [inProgressTasksPage, setInProgressTasksPage] = useState(1);
-  const [inProgressTasksHasMore, setInProgressTasksHasMore] = useState(true);
-  const [inProgressTasksRefreshing, setInProgressTasksRefreshing] =
-    useState(false);
-  const [inProgressTasksLoadingMore, setInProgressTasksLoadingMore] =
-    useState(false);
+const SORT_OPTIONS: SheetOption[] = [
+  { key: "due-date", label: "Due date", icon: "calendar-outline" },
+  { key: "priority", label: "Priority", icon: "flag-outline" },
+  { key: "recent", label: "Recently updated", icon: "time-outline" },
+];
 
-  // Separate states for completed tasks
-  const [completedTasks, setCompletedTasks] = useState<TaskModel[]>([]);
-  const [completedTasksLoading, setCompletedTasksLoading] = useState(true);
-  const [completedTasksPage, setCompletedTasksPage] = useState(1);
-  const [completedTasksHasMore, setCompletedTasksHasMore] = useState(true);
-  const [completedTasksRefreshing, setCompletedTasksRefreshing] =
-    useState(false);
-  const [completedTasksLoadingMore, setCompletedTasksLoadingMore] =
-    useState(false);
+const DUE_OPTIONS: SheetOption[] = [
+  { key: "any", label: "Any time" },
+  { key: "overdue", label: "Overdue" },
+  { key: "today", label: "Due today" },
+  { key: "week", label: "Due this week" },
+];
 
-  const [activeTab, setActiveTab] = useState<
-    "pending" | "in-progress" | "completed"
-  >("pending");
+const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
+  const user = useAppSelector((state) => state.user.userData);
+  const [activeTab, setActiveTab] = useState<TaskFilter>("my-tasks");
+  const [query, setQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("due-date");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [dueFilter, setDueFilter] = useState<string>("any");
+  const [openSheet, setOpenSheet] = useState<"sort" | "project" | "due" | null>(
+    null
+  );
 
   useEffect(() => {
-    const unsubscribe = props.navigation.addListener("focus", () => {
-      refreshAllTasks();
+    const filter = route.params?.filter;
+    if (filter) {
+      setActiveTab(filter);
+    }
+  }, [route.params]);
+
+  const myProjects = useMemo(
+    () => (user ? getProjectsForUser(user.id) : []),
+    [user]
+  );
+
+  // Only tasks inside projects the user belongs to.
+  const visibleScope = useMemo(() => {
+    const projectIds = new Set(myProjects.map((project) => project.id));
+    return allTasks.filter((task) => projectIds.has(task.projectId));
+  }, [myProjects]);
+
+  const tabs: TabItem<TaskFilter>[] = [
+    { key: "my-tasks", label: "My Tasks" },
+    { key: "all", label: "All" },
+    { key: "created", label: "Created" },
+    { key: "in-progress", label: "In Progress" },
+    { key: "pending-approval", label: "Pending Approval" },
+    { key: "completed", label: "Completed" },
+  ];
+
+  const filteredTasks = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    const byTab = visibleScope.filter((task) => {
+      switch (activeTab) {
+        case "all":
+          return true;
+        case "my-tasks":
+          return task.assigneeId === user?.id;
+        case "created":
+          return task.creatorId === user?.id;
+        default:
+          return task.status === activeTab;
+      }
     });
 
-    return unsubscribe;
-  }, [props.navigation]);
-
-  useEffect(() => {
-    fetchPendingTasks(1, false);
-    fetchInProgressTasks(1, false);
-    fetchCompletedTasks(1, false);
-  }, []);
-
-  // Fetch Pending Tasks
-  const fetchPendingTasks = async (page: number, loadMore: boolean) => {
-    if (loadMore) {
-      if (!pendingTasksHasMore || pendingTasksLoadingMore) return;
-      setPendingTasksLoadingMore(true);
-    } else {
-      setPendingTasksLoading(true);
-    }
-
-    try {
-      const response = await TaskService.taskList(page, LIMIT, "pending");
-      const newTasks = response.tasks || [];
-      const pagination = response.pagination;
-
-      if (loadMore) {
-        setPendingTasks((prev) => [...prev, ...newTasks]);
-      } else {
-        setPendingTasks(newTasks);
+    const byFilters = byTab.filter((task) => {
+      if (projectFilter !== "all" && task.projectId !== projectFilter) {
+        return false;
       }
 
-      setPendingTasksPage(page);
-      setPendingTasksHasMore(pagination.currentPage < pagination.totalPages);
-    } catch (error) {
-      console.error("Error fetching pending tasks:", error);
-      if (!loadMore) {
-        setPendingTasks([]);
+      const days = daysUntil(task.dueDate);
+      if (
+        dueFilter === "overdue" &&
+        (days >= 0 || task.status === "completed")
+      ) {
+        return false;
       }
-    } finally {
-      setPendingTasksLoading(false);
-      setPendingTasksLoadingMore(false);
-      setPendingTasksRefreshing(false);
-    }
-  };
-
-  // Fetch In-Progress Tasks
-  const fetchInProgressTasks = async (page: number, loadMore: boolean) => {
-    if (loadMore) {
-      if (!inProgressTasksHasMore || inProgressTasksLoadingMore) return;
-      setInProgressTasksLoadingMore(true);
-    } else {
-      setInProgressTasksLoading(true);
-    }
-
-    try {
-      const response = await TaskService.taskList(page, LIMIT, "in-progress");
-      const newTasks = response.tasks || [];
-      const pagination = response.pagination;
-
-      if (loadMore) {
-        setInProgressTasks((prev) => [...prev, ...newTasks]);
-      } else {
-        setInProgressTasks(newTasks);
+      if (dueFilter === "today" && days !== 0) {
+        return false;
+      }
+      if (dueFilter === "week" && (days < 0 || days > 7)) {
+        return false;
       }
 
-      setInProgressTasksPage(page);
-      setInProgressTasksHasMore(pagination.currentPage < pagination.totalPages);
-    } catch (error) {
-      console.error("Error fetching in-progress tasks:", error);
-      if (!loadMore) {
-        setInProgressTasks([]);
-      }
-    } finally {
-      setInProgressTasksLoading(false);
-      setInProgressTasksLoadingMore(false);
-      setInProgressTasksRefreshing(false);
-    }
-  };
-
-  // Fetch Completed Tasks
-  const fetchCompletedTasks = async (page: number, loadMore: boolean) => {
-    if (loadMore) {
-      if (!completedTasksHasMore || completedTasksLoadingMore) return;
-      setCompletedTasksLoadingMore(true);
-    } else {
-      setCompletedTasksLoading(true);
-    }
-
-    try {
-      const response = await TaskService.taskList(page, LIMIT, "completed");
-      const newTasks = response.tasks || [];
-      const pagination = response.pagination;
-
-      if (loadMore) {
-        setCompletedTasks((prev) => [...prev, ...newTasks]);
-      } else {
-        setCompletedTasks(newTasks);
+      if (
+        normalizedQuery &&
+        !task.title.toLowerCase().includes(normalizedQuery)
+      ) {
+        return false;
       }
 
-      setCompletedTasksPage(page);
-      setCompletedTasksHasMore(pagination.currentPage < pagination.totalPages);
-    } catch (error) {
-      console.error("Error fetching completed tasks:", error);
-      if (!loadMore) {
-        setCompletedTasks([]);
+      return true;
+    });
+
+    return [...byFilters].sort((a, b) => {
+      if (sortKey === "priority") {
+        return PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
       }
-    } finally {
-      setCompletedTasksLoading(false);
-      setCompletedTasksLoadingMore(false);
-      setCompletedTasksRefreshing(false);
-    }
+      if (sortKey === "recent") {
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      }
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  }, [visibleScope, activeTab, user, projectFilter, dueFilter, query, sortKey]);
+
+  const activeFilterCount =
+    (projectFilter === "all" ? 0 : 1) + (dueFilter === "any" ? 0 : 1);
+
+  const projectOptions: SheetOption[] = [
+    { key: "all", label: "All projects" },
+    ...myProjects.map((project) => ({
+      key: project.id,
+      label: project.name,
+      color: project.color,
+      icon: "ellipse",
+    })),
+  ];
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 700);
   };
 
-  // Refresh all tasks
-  const refreshAllTasks = () => {
-    fetchPendingTasks(1, false);
-    fetchInProgressTasks(1, false);
-    fetchCompletedTasks(1, false);
-  };
+  const gotoTaskDetails = (task: TaskModel) =>
+    navigation.navigate("TaskDetails", { taskId: task.id });
 
-  // Load more handlers
-  const handleLoadMorePending = () => {
-    if (pendingTasksHasMore && !pendingTasksLoadingMore) {
-      fetchPendingTasks(pendingTasksPage + 1, true);
-    }
-  };
-
-  const handleLoadMoreInProgress = () => {
-    if (inProgressTasksHasMore && !inProgressTasksLoadingMore) {
-      fetchInProgressTasks(inProgressTasksPage + 1, true);
-    }
-  };
-
-  const handleLoadMoreCompleted = () => {
-    if (completedTasksHasMore && !completedTasksLoadingMore) {
-      fetchCompletedTasks(completedTasksPage + 1, true);
-    }
-  };
-
-  // Refresh handlers
-  const handleRefreshPending = () => {
-    setPendingTasksRefreshing(true);
-    fetchPendingTasks(1, false);
-  };
-
-  const handleRefreshInProgress = () => {
-    setInProgressTasksRefreshing(true);
-    fetchInProgressTasks(1, false);
-  };
-
-  const handleRefreshCompleted = () => {
-    setCompletedTasksRefreshing(true);
-    fetchCompletedTasks(1, false);
-  };
-
-  const handleTabChange = (tab: "pending" | "in-progress" | "completed") => {
-    setActiveTab(tab);
-  };
-
-  // Empty state component
-  const EmptyState = ({
-    icon,
-    title,
-    subtitle,
-  }: {
-    icon: string;
-    title: string;
-    subtitle: string;
-  }) => (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconContainer}>
-        <Ionicons name={icon as any} size={64} color={Colors.borderGray} />
-      </View>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySubtitle}>{subtitle}</Text>
-    </View>
+  const renderFilterPill = (
+    label: string,
+    isActive: boolean,
+    onPress: () => void,
+    icon: string
+  ) => (
+    <TouchableOpacity
+      style={[styles.filterPill, isActive && styles.filterPillActive]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Ionicons
+        name={icon}
+        size={14}
+        color={isActive ? Colors.white : Colors.lightFont}
+      />
+      <Text
+        style={[styles.filterPillText, isActive && styles.filterPillTextActive]}
+      >
+        {label}
+      </Text>
+      <Ionicons
+        name="chevron-down"
+        size={13}
+        color={isActive ? Colors.white : Colors.mutedFont}
+      />
+    </TouchableOpacity>
   );
-
-  // Footer loading indicator
-  const FooterLoader = () => (
-    <View style={styles.footerLoader}>
-      <Loader size="small" color={Colors.primary} />
-      <Text style={styles.footerLoaderText}>Loading more...</Text>
-    </View>
-  );
-
-  const renderPendingTasks = () => {
-    if (pendingTasksLoading) {
-      return <Loader size="large" fullScreen />;
-    }
-
-    return (
-      <FlatList
-        data={pendingTasks}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <TaskCard
-            id={item.id}
-            title={item.title}
-            description={item.description}
-            dueDate={item.dueDate}
-            status="pending"
-            onPress={(id) => console.log("View task:", id)}
-          />
-        )}
-        contentContainerStyle={[
-          styles.listContainer,
-          pendingTasks.length === 0 && styles.emptyListContainer,
-        ]}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="hourglass-outline"
-            title="No pending tasks"
-            subtitle="All caught up! Create a new task to get started."
-          />
-        }
-        onEndReached={handleLoadMorePending}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={pendingTasksLoadingMore ? <FooterLoader /> : null}
-        refreshControl={
-          <RefreshControl
-            refreshing={pendingTasksRefreshing}
-            onRefresh={handleRefreshPending}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
-          />
-        }
-      />
-    );
-  };
-
-  const renderInProgressTasks = () => {
-    if (inProgressTasksLoading) {
-      return <Loader size="large" fullScreen />;
-    }
-
-    return (
-      <FlatList
-        data={inProgressTasks}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <TaskCard
-            id={item.id}
-            title={item.title}
-            description={item.description}
-            dueDate={item.dueDate}
-            status="in-progress"
-            onPress={(id) => console.log("View task:", id)}
-          />
-        )}
-        contentContainerStyle={[
-          styles.listContainer,
-          inProgressTasks.length === 0 && styles.emptyListContainer,
-        ]}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="time-outline"
-            title="No tasks in progress"
-            subtitle="Move pending tasks here when you start working on them."
-          />
-        }
-        onEndReached={handleLoadMoreInProgress}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={
-          inProgressTasksLoadingMore ? <FooterLoader /> : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={inProgressTasksRefreshing}
-            onRefresh={handleRefreshInProgress}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
-          />
-        }
-      />
-    );
-  };
-
-  const renderCompletedTasks = () => {
-    if (completedTasksLoading) {
-      return <Loader size="large" fullScreen />;
-    }
-
-    return (
-      <FlatList
-        data={completedTasks}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <TaskCard
-            id={item.id}
-            title={item.title}
-            description={item.description}
-            dueDate={item.dueDate}
-            status="completed"
-            onPress={(id) => console.log("View task:", id)}
-          />
-        )}
-        contentContainerStyle={[
-          styles.listContainer,
-          completedTasks.length === 0 && styles.emptyListContainer,
-        ]}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="checkmark-circle-outline"
-            title="No completed tasks"
-            subtitle="Complete your tasks and they'll appear here."
-          />
-        }
-        onEndReached={handleLoadMoreCompleted}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={
-          completedTasksLoadingMore ? <FooterLoader /> : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={completedTasksRefreshing}
-            onRefresh={handleRefreshCompleted}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
-          />
-        }
-      />
-    );
-  };
-
-  const renderTabContent = () => {
-    return (
-      <View style={{ flex: 1 }}>
-        {activeTab === "pending" && renderPendingTasks()}
-        {activeTab === "in-progress" && renderInProgressTasks()}
-        {activeTab === "completed" && renderCompletedTasks()}
-      </View>
-    );
-  };
 
   return (
     <Container>
-      <Header title="All Tasks" />
-      <WhiteContainer style={styles.conatiner}>
-        <View style={styles.tabContainer}>
+      <Header
+        title="Tasks"
+        right={
           <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "pending" && styles.activeTabButton,
-            ]}
-            onPress={() => handleTabChange("pending")}
+            onPress={() => navigation.navigate("CreateTask")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Create task"
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === "pending" && styles.activeTabText,
-              ]}
-            >
-              Pending
-            </Text>
+            <Ionicons name="add" size={26} color={Colors.primary} />
           </TouchableOpacity>
+        }
+      />
+      <WhiteContainer style={styles.container}>
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search tasks"
+          style={styles.search}
+        />
 
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "in-progress" && styles.activeTabButton,
-            ]}
-            onPress={() => handleTabChange("in-progress")}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === "in-progress" && styles.activeTabText,
-              ]}
-            >
-              In Progress
-            </Text>
-          </TouchableOpacity>
+        <SegmentedTabs
+          tabs={tabs}
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          scrollable
+          style={styles.tabs}
+        />
 
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "completed" && styles.activeTabButton,
-            ]}
-            onPress={() => handleTabChange("completed")}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === "completed" && styles.activeTabText,
-              ]}
-            >
-              Completed
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.filterRow}>
+          {renderFilterPill(
+            projectFilter === "all"
+              ? "Project"
+              : projectOptions.find((option) => option.key === projectFilter)
+                  ?.label ?? "Project",
+            projectFilter !== "all",
+            () => setOpenSheet("project"),
+            "folder-outline"
+          )}
+          {renderFilterPill(
+            DUE_OPTIONS.find((option) => option.key === dueFilter)?.label ??
+              "Due",
+            dueFilter !== "any",
+            () => setOpenSheet("due"),
+            "calendar-outline"
+          )}
+          {renderFilterPill(
+            SORT_OPTIONS.find((option) => option.key === sortKey)?.label ??
+              "Sort",
+            false,
+            () => setOpenSheet("sort"),
+            "swap-vertical-outline"
+          )}
         </View>
 
-        {/* Tab Content */}
-        {renderTabContent()}
+        <View style={styles.resultRow}>
+          <Text style={styles.resultCount}>
+            {filteredTasks.length} task{filteredTasks.length === 1 ? "" : "s"}
+          </Text>
+          {activeFilterCount > 0 ? (
+            <TouchableOpacity
+              onPress={() => {
+                setProjectFilter("all");
+                setDueFilter("any");
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearFilters}>Clear filters</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <FlatList
+          data={filteredTasks}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TaskCard task={item} onPress={gotoTaskDetails} />
+          )}
+          contentContainerStyle={[
+            styles.list,
+            filteredTasks.length === 0 && styles.listEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon="checkbox-outline"
+              title="No tasks found"
+              subtitle="Adjust your filters or create a new task."
+              actionTitle="Create Task"
+              onActionPress={() => navigation.navigate("CreateTask")}
+            />
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
+        />
       </WhiteContainer>
+
+      <OptionSheet
+        visible={openSheet === "project"}
+        title="Filter by project"
+        options={projectOptions}
+        selectedKey={projectFilter}
+        onSelect={(option) => {
+          setProjectFilter(option.key);
+          setOpenSheet(null);
+        }}
+        onClose={() => setOpenSheet(null)}
+      />
+
+      <OptionSheet
+        visible={openSheet === "due"}
+        title="Filter by due date"
+        options={DUE_OPTIONS}
+        selectedKey={dueFilter}
+        onSelect={(option) => {
+          setDueFilter(option.key);
+          setOpenSheet(null);
+        }}
+        onClose={() => setOpenSheet(null)}
+      />
+
+      <OptionSheet
+        visible={openSheet === "sort"}
+        title="Sort tasks by"
+        options={SORT_OPTIONS}
+        selectedKey={sortKey}
+        onSelect={(option) => {
+          setSortKey(option.key as SortKey);
+          setOpenSheet(null);
+        }}
+        onClose={() => setOpenSheet(null)}
+      />
     </Container>
   );
 };
@@ -466,85 +342,69 @@ const Tasks: React.FC<TasksScreenProps> = (props: TasksScreenProps) => {
 export default Tasks;
 
 const styles = StyleSheet.create({
-  conatiner: {
-    paddingTop: 10,
+  container: {
+    paddingTop: 12,
     paddingHorizontal: 16,
-    paddingBottom: 40,
   },
-  tabContainer: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-    paddingTop: 0,
-    marginBottom: 0,
+  search: {
+    marginBottom: 14,
+  },
+  tabs: {
     marginHorizontal: -16,
+    paddingHorizontal: 16,
   },
-  tabButton: {
-    flex: 1,
-    paddingBottom: 12,
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+  filterPill: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.borderGray,
+    backgroundColor: Colors.white,
   },
-  activeTabButton: {
-    borderBottomColor: Colors.primary,
+  filterPillActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
-  tabText: {
-    fontSize: 16,
+  filterPillText: {
+    fontSize: 12,
     fontWeight: "500",
-    color: "#6B7280",
+    color: Colors.lightFont,
+    maxWidth: 96,
   },
-  activeTabText: {
+  filterPillTextActive: {
+    color: Colors.white,
+    fontWeight: "600",
+  },
+  resultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+  },
+  resultCount: {
+    fontSize: 12,
+    color: Colors.mutedFont,
+    fontWeight: "500",
+  },
+  clearFilters: {
+    fontSize: 12,
     color: Colors.primary,
     fontWeight: "600",
   },
-  listContainer: {
-    paddingVertical: 16,
+  list: {
+    paddingTop: 12,
+    paddingBottom: 90,
   },
-  emptyListContainer: {
+  listEmpty: {
     flexGrow: 1,
     justifyContent: "center",
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: Colors.secondary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: Colors.mutedFont,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  footerLoader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 20,
-    gap: 8,
-  },
-  footerLoaderText: {
-    fontSize: 14,
-    color: Colors.mutedFont,
-    marginLeft: 8,
   },
 });

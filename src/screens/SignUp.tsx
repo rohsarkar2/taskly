@@ -1,263 +1,241 @@
 import React, { useState } from "react";
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Image,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { Container, Header, WhiteContainer, Button } from "../components";
+import {
+  Button,
+  Container,
+  Header,
+  Input,
+  WhiteContainer,
+} from "../components";
 import Colors from "../configs/Colors";
+import Constant from "../configs/Constant";
+import { currentUser, organization } from "../data";
 import { SignUpScreenProps } from "../navigation/NavigationTypes";
-import UserService from "../services/UserService";
-import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
 import { useAppDispatch } from "../store/hooks";
 import { setUserData } from "../store/slices/userSlice";
-import { CommonActions } from "@react-navigation/native";
+
+type FormErrors = Partial<
+  Record<
+    "organizationId" | "name" | "email" | "password" | "confirmPassword",
+    string
+  >
+>;
 
 const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
+  const dispatch = useAppDispatch();
+  const [organizationId, setOrganizationId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const dispatch = useAppDispatch();
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [loading, setLoading] = useState(false);
 
-  const handleSignUp = async () => {
-    setLoading(true);
+  const passwordRules = Constant.PASSWORD_RULES.map((rule) => {
+    const checks: Record<string, boolean> = {
+      "1": password.length >= 8,
+      "2": /[A-Z]/.test(password),
+      "3": /[a-z]/.test(password),
+      "4": /[0-9]/.test(password),
+      "5": /[^A-Za-z0-9]/.test(password),
+    };
+    return { ...rule, isMatched: checks[rule.id] ?? false };
+  });
 
-    try {
-      let requestBody = {
-        name,
-        email,
-        password,
-        confirmPassword,
-      };
+  const validate = (): boolean => {
+    const nextErrors: FormErrors = {};
 
-      const response = await UserService.registerUser(requestBody);
-
-      if (response) {
-        const userData = response.user;
-        const accessToken = userData.accessToken;
-        const refreshToken = userData.refreshToken;
-
-        // Save tokens securely
-        await saveAccessToken(accessToken);
-        await saveRefreshToken(refreshToken);
-
-        // Update user data in Redux store
-        dispatch(setUserData(userData));
-
-        setLoading(false);
-
-        Alert.alert(
-          "Success",
-          "Account created successfully! Please login to continue.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                setTimeout(() => {
-                  navigation.pop(1);
-                }, 350);
-              },
-            },
-          ],
-        );
-      }
-    } catch (error: any) {
-      console.error("Error during registration:", error);
-      setLoading(false);
-
-      const errorMessage =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Failed to create account. Please try again.";
-
-      Alert.alert("Sign Up Failed", errorMessage, [{ text: "OK" }]);
+    if (!organizationId.trim()) {
+      nextErrors.organizationId = "Enter the ID your admin shared with you";
     }
+    if (!name.trim()) {
+      nextErrors.name = "Enter your full name";
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      nextErrors.email = "Enter a valid email address";
+    }
+    if (passwordRules.some((rule) => !rule.isMatched)) {
+      nextErrors.password = "Password does not meet all requirements";
+    }
+    if (password !== confirmPassword) {
+      nextErrors.confirmPassword = "Passwords do not match";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
-  const navigateToSignIn = () => {
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 1,
-        routes: [
-          { name: "HomeTab", params: { screen: "Home" } },
-          { name: "SignIn" },
-        ],
-      }),
-    );
+  const handleSignUp = () => {
+    if (!validate()) {
+      return;
+    }
+
+    setLoading(true);
+
+    // Every employee registers as a pending Team Member — the admin decides
+    // the final role from Taskly Admin.
+    setTimeout(() => {
+      setLoading(false);
+      dispatch(
+        setUserData({
+          ...currentUser,
+          name: name.trim(),
+          email: email.trim(),
+          role: "team-member",
+          status: "pending",
+        })
+      );
+      navigation.replace("PendingApproval");
+    }, 700);
   };
 
   return (
     <Container>
-      <Header title="Sign Up" showBack />
+      <Header title="Create Account" showBack />
       <WhiteContainer style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.keyboardView}
+          style={styles.flex}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.content}>
-              {/* Logo/Icon Section */}
-              <View style={styles.logoSection}>
-                <View style={styles.logoContainer}>
-                  <Image
-                    source={require("../assets/images/taskly-icon.png")}
-                    style={styles.logo}
-                  />
-                </View>
-                <Text style={styles.welcomeText}>Create Account</Text>
-                <Text style={styles.subtitleText}>
-                  Sign up to start managing your tasks
-                </Text>
-              </View>
+            <Text style={styles.intro}>
+              Join your organization on Taskly. Your admin approves the account
+              and assigns your role.
+            </Text>
 
-              {/* Form Section */}
-              <View style={styles.formSection}>
-                {/* Name Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Full Name</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons
-                      name="person-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your name"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={name}
-                      onChangeText={setName}
-                      autoCapitalize="words"
-                    />
-                  </View>
-                </View>
+            <Input
+              label="Organization ID"
+              icon="business-outline"
+              placeholder={organization.uniqueOrganizationId}
+              value={organizationId}
+              onChangeText={setOrganizationId}
+              autoCapitalize="characters"
+              error={errors.organizationId}
+              hint="Ask your administrator for this ID"
+            />
 
-                {/* Email Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons
-                      name="mail-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your email"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={email}
-                      onChangeText={setEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                    />
-                  </View>
-                </View>
+            <Input
+              label="Full Name"
+              icon="person-outline"
+              placeholder="Your name"
+              value={name}
+              onChangeText={setName}
+              error={errors.name}
+            />
 
-                {/* Password Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      placeholder="Create a password"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.eyeIcon}
-                    >
-                      <Ionicons
-                        name={showPassword ? "eye-outline" : "eye-off-outline"}
-                        size={20}
-                        color={Colors.mutedFont}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+            <Input
+              label="Email"
+              icon="mail-outline"
+              placeholder="you@company.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              error={errors.email}
+            />
 
-                {/* Confirm Password Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Confirm Password</Text>
-                  <View style={styles.inputWrapper}>
+            <Input
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="Create a password"
+              value={password}
+              onChangeText={setPassword}
+              isPassword
+              autoCapitalize="none"
+              error={errors.password}
+            />
+
+            {password.length > 0 ? (
+              <View style={styles.rules}>
+                {passwordRules.map((rule) => (
+                  <View key={rule.id} style={styles.rule}>
                     <Ionicons
-                      name="lock-closed-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      placeholder="Confirm your password"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      secureTextEntry={!showConfirmPassword}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      onPress={() =>
-                        setShowConfirmPassword(!showConfirmPassword)
+                      name={
+                        rule.isMatched ? "checkmark-circle" : "ellipse-outline"
                       }
-                      style={styles.eyeIcon}
+                      size={15}
+                      color={rule.isMatched ? Colors.success : Colors.mutedFont}
+                    />
+                    <Text
+                      style={[
+                        styles.ruleText,
+                        rule.isMatched && styles.ruleTextMatched,
+                      ]}
                     >
-                      <Ionicons
-                        name={
-                          showConfirmPassword
-                            ? "eye-outline"
-                            : "eye-off-outline"
-                        }
-                        size={20}
-                        color={Colors.mutedFont}
-                      />
-                    </TouchableOpacity>
+                      {rule.name}
+                    </Text>
                   </View>
-                </View>
-
-                {/* Sign Up Button */}
-                <Button
-                  title="Sign Up"
-                  onPress={handleSignUp}
-                  style={[styles.signUpButton]}
-                />
-
-                {/* Sign In Link */}
-                <View style={styles.signInSection}>
-                  <Text style={styles.signInText}>
-                    Already have an account?{" "}
-                  </Text>
-                  <TouchableOpacity onPress={navigateToSignIn}>
-                    <Text style={styles.signInLink}>Sign In</Text>
-                  </TouchableOpacity>
-                </View>
+                ))}
               </View>
+            ) : null}
+
+            <Input
+              label="Confirm Password"
+              icon="lock-closed-outline"
+              placeholder="Re-enter your password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              isPassword
+              autoCapitalize="none"
+              error={errors.confirmPassword}
+            />
+
+            <View style={styles.roleNotice}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color={Colors.primary}
+              />
+              <Text style={styles.roleNoticeText}>
+                You'll join as a Team Member. Your admin can promote you to Team
+                Lead or Manager later.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.terms}
+              onPress={() => setAgreeToTerms((agreed) => !agreed)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={agreeToTerms ? "checkbox" : "square-outline"}
+                size={20}
+                color={agreeToTerms ? Colors.primary : Colors.mutedFont}
+              />
+              <Text style={styles.termsText}>
+                I agree to the Terms of Service and Privacy Policy
+              </Text>
+            </TouchableOpacity>
+
+            <Button
+              title="Create Account"
+              onPress={handleSignUp}
+              loading={loading}
+              disabled={!agreeToTerms}
+            />
+
+            <View style={styles.signInRow}>
+              <Text style={styles.signInText}>Already have an account? </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate("SignIn")}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.signInLink}>Sign In</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -271,88 +249,67 @@ export default SignUp;
 const styles = StyleSheet.create({
   container: {
     paddingTop: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  keyboardView: {
+  flex: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   content: {
-    flex: 1,
+    paddingBottom: 48,
   },
-  logoSection: {
-    alignItems: "center",
-    marginBottom: 32,
-  },
-  logoContainer: {
-    // backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  logo: {
-    width: 100,
-    height: 100,
-    resizeMode: "contain",
-  },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.black,
-    marginBottom: 8,
-  },
-  subtitleText: {
-    fontSize: 15,
-    color: Colors.mutedFont,
-  },
-  formSection: {
-    flex: 1,
-  },
-  inputContainer: {
-    marginBottom: 18,
-  },
-  label: {
+  intro: {
     fontSize: 14,
-    fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 8,
-  },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderGray,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 50,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.black,
-  },
-  passwordInput: {
-    paddingRight: 40,
-  },
-  eyeIcon: {
-    position: "absolute",
-    right: 12,
-    padding: 4,
-  },
-  signUpButton: {
-    marginTop: 8,
+    color: Colors.mutedFont,
+    lineHeight: 20,
     marginBottom: 24,
   },
-  signInSection: {
+  rules: {
+    marginTop: -8,
+    marginBottom: 18,
+    gap: 6,
+  },
+  rule: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  ruleText: {
+    fontSize: 12,
+    color: Colors.mutedFont,
+  },
+  ruleTextMatched: {
+    color: Colors.success,
+  },
+  roleNotice: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: Colors.secondary,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  roleNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.secondaryFont,
+    lineHeight: 19,
+  },
+  terms: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 24,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.lightFont,
+  },
+  signInRow: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    marginTop: 24,
   },
   signInText: {
     fontSize: 14,

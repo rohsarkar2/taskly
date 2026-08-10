@@ -1,4 +1,5 @@
 import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 import {
   CardStyleInterpolators,
   createStackNavigator,
@@ -7,55 +8,125 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { BottomTabsParamList, RootStackParamList } from "./NavigationTypes";
-import Home from "../screens/Home";
-import Activity from "../screens/Activity";
-import SignIn from "../screens/SignIn";
 import Colors from "../configs/Colors";
+import { unreadNotificationCount } from "../data";
+
+// Authentication
+import Splash from "../screens/Splash";
+import Welcome from "../screens/Welcome";
+import SignIn from "../screens/SignIn";
 import SignUp from "../screens/SignUp";
-import Settings from "../screens/Settings";
-import CreateTask from "../screens/CreateTask";
+import ForgotPassword from "../screens/ForgotPassword";
+import ResetPassword from "../screens/ResetPassword";
+import PendingApproval from "../screens/PendingApproval";
+import AccountSuspended from "../screens/AccountSuspended";
+
+// Tabs
+import Home from "../screens/Home";
+import Projects from "../screens/Projects";
 import Tasks from "../screens/Tasks";
+import Notifications from "../screens/Notifications";
+import Profile from "../screens/Profile";
+
+// Projects
+import ProjectDetails from "../screens/ProjectDetails";
+import ProjectMembers from "../screens/ProjectMembers";
+
+// Tasks
+import TaskDetails from "../screens/TaskDetails";
+import CreateTask from "../screens/CreateTask";
+import TaskComments from "../screens/TaskComments";
+import TaskActivity from "../screens/TaskActivity";
+import MyTasks from "../screens/MyTasks";
+
+// Approvals
+import PendingApprovals from "../screens/PendingApprovals";
+import ApprovalDetails from "../screens/ApprovalDetails";
+import RejectTask from "../screens/RejectTask";
+
+// Notifications
+import NotificationDetails from "../screens/NotificationDetails";
+
+// User
+import EditProfile from "../screens/EditProfile";
+import MyPerformance from "../screens/MyPerformance";
+import OrganizationInfo from "../screens/OrganizationInfo";
+import Settings from "../screens/Settings";
+import ChangePassword from "../screens/ChangePassword";
+
+// Team
+import MyTeam from "../screens/MyTeam";
+import TeamMemberDetails from "../screens/TeamMemberDetails";
+import TeamTasks from "../screens/TeamTasks";
+import TeamWorkload from "../screens/TeamWorkload";
 
 const RootStack = createStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<BottomTabsParamList>();
 
-function TabsNavigator() {
-  const tabIcons = {
-    Home: {
-      active: "home",
-      inactive: "home-outline",
-    },
-    Tasks: {
-      active: "list",
-      inactive: "list-outline",
-    },
-    Settings: {
-      active: "settings",
-      inactive: "settings-outline",
-    },
-  } as const;
+const tabIcons = {
+  Home: { active: "home", inactive: "home-outline" },
+  Projects: { active: "folder-open", inactive: "folder-open-outline" },
+  Tasks: { active: "checkbox", inactive: "checkbox-outline" },
+  Notifications: { active: "notifications", inactive: "notifications-outline" },
+  Profile: { active: "person-circle", inactive: "person-circle-outline" },
+} as const;
 
+function TabBarIcon({
+  routeName,
+  focused,
+  color,
+  size,
+}: {
+  routeName: keyof BottomTabsParamList;
+  focused: boolean;
+  color: string;
+  size: number;
+}) {
+  const iconName = tabIcons[routeName][focused ? "active" : "inactive"];
+  const showBadge =
+    routeName === "Notifications" && unreadNotificationCount > 0;
+
+  return (
+    <View>
+      <Ionicons name={iconName} size={size ?? 22} color={color} />
+      {showBadge ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>
+            {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TabsNavigator() {
   return (
     <Tabs.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.mutedFont,
+        tabBarLabelStyle: styles.tabLabel,
         tabBarStyle: {
           backgroundColor: Colors.white,
           borderTopColor: Colors.borderGray,
         },
-        tabBarIcon: ({ focused, color, size }) => {
-          const iconKey = focused ? "active" : "inactive";
-          const iconName = tabIcons[route.name][iconKey];
-
-          return <Ionicons name={iconName} size={size ?? 22} color={color} />;
-        },
+        tabBarIcon: ({ focused, color, size }) => (
+          <TabBarIcon
+            routeName={route.name}
+            focused={focused}
+            color={color}
+            size={size}
+          />
+        ),
       })}
     >
       <Tabs.Screen name="Home" component={Home} />
+      <Tabs.Screen name="Projects" component={Projects} />
       <Tabs.Screen name="Tasks" component={Tasks} />
-      <Tabs.Screen name="Settings" component={Settings} />
+      <Tabs.Screen name="Notifications" component={Notifications} />
+      <Tabs.Screen name="Profile" component={Profile} />
     </Tabs.Navigator>
   );
 }
@@ -64,17 +135,109 @@ export default function Navigation() {
   return (
     <NavigationContainer>
       <RootStack.Navigator
+        initialRouteName="Splash"
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
           cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
         }}
       >
-        <RootStack.Screen name="HomeTab" component={TabsNavigator} />
+        <RootStack.Screen
+          name="Splash"
+          component={Splash}
+          options={{ gestureEnabled: false }}
+        />
+
+        {/* Authentication */}
+        <RootStack.Screen name="Welcome" component={Welcome} />
         <RootStack.Screen name="SignIn" component={SignIn} />
         <RootStack.Screen name="SignUp" component={SignUp} />
+        <RootStack.Screen name="ForgotPassword" component={ForgotPassword} />
+        <RootStack.Screen name="ResetPassword" component={ResetPassword} />
+        <RootStack.Screen name="PendingApproval" component={PendingApproval} />
+        <RootStack.Screen
+          name="AccountSuspended"
+          component={AccountSuspended}
+        />
+
+        {/* Main */}
+        <RootStack.Screen name="MainTabs" component={TabsNavigator} />
+
+        {/* Projects */}
+        <RootStack.Screen name="ProjectDetails" component={ProjectDetails} />
+        <RootStack.Screen name="ProjectMembers" component={ProjectMembers} />
+
+        {/* Tasks */}
+        <RootStack.Screen name="TaskDetails" component={TaskDetails} />
         <RootStack.Screen name="CreateTask" component={CreateTask} />
+        <RootStack.Screen name="TaskComments" component={TaskComments} />
+        <RootStack.Screen name="TaskActivity" component={TaskActivity} />
+        <RootStack.Screen name="MyTasks" component={MyTasks} />
+
+        {/* Approvals */}
+        <RootStack.Screen
+          name="PendingApprovals"
+          component={PendingApprovals}
+        />
+        <RootStack.Screen name="ApprovalDetails" component={ApprovalDetails} />
+        <RootStack.Screen
+          name="RejectTask"
+          component={RejectTask}
+          options={{
+            cardStyleInterpolator:
+              CardStyleInterpolators.forModalPresentationIOS,
+          }}
+        />
+
+        {/* Notifications */}
+        <RootStack.Screen
+          name="NotificationDetails"
+          component={NotificationDetails}
+        />
+
+        {/* User */}
+        <RootStack.Screen name="EditProfile" component={EditProfile} />
+        <RootStack.Screen name="MyPerformance" component={MyPerformance} />
+        <RootStack.Screen
+          name="OrganizationInfo"
+          component={OrganizationInfo}
+        />
+        <RootStack.Screen name="Settings" component={Settings} />
+        <RootStack.Screen name="ChangePassword" component={ChangePassword} />
+
+        {/* Team */}
+        <RootStack.Screen name="MyTeam" component={MyTeam} />
+        <RootStack.Screen
+          name="TeamMemberDetails"
+          component={TeamMemberDetails}
+        />
+        <RootStack.Screen name="TeamTasks" component={TeamTasks} />
+        <RootStack.Screen name="TeamWorkload" component={TeamWorkload} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+});

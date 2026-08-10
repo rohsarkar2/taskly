@@ -48,15 +48,15 @@ function Header({
   const route = useRoute();
 
   // Tab screens where we show logo instead of back button
-  const tabScreens = ["Home"];
+  const tabScreens = ["Home", "Projects", "Tasks", "Notifications", "Profile"];
   const isTabScreen = tabScreens.includes(route.name);
 
   // Determine if back button should be shown
   const shouldShowBack =
     typeof showBack === "boolean" ? showBack : !isTabScreen;
 
-  // Determine if logo should be shown
-  const shouldShowLogo = showLogo || isTabScreen;
+  // The logo is opt-in — tab screens other than Home just show their title
+  const shouldShowLogo = showLogo;
 
   const handleBackPress = () => {
     if (onBackPress) {
@@ -71,7 +71,13 @@ function Header({
 
   return (
     <View style={[styles.container, style]}>
-      <View style={styles.leftSection}>
+      <View
+        style={
+          shouldShowBack || shouldShowLogo
+            ? styles.leftSection
+            : styles.leftSlotEmpty
+        }
+      >
         {shouldShowLogo && !shouldShowBack ? (
           // Logo for tab screens
           <View style={styles.logoContainer}>
@@ -128,6 +134,9 @@ const styles = StyleSheet.create({
     width: 38,
     alignItems: "flex-start",
     justifyContent: "center",
+  },
+  leftSlotEmpty: {
+    width: 0,
   },
   logoContainer: {
     flexDirection: "row",

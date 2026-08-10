@@ -32,4 +32,17 @@ export default class TaskService {
       throw new Error(error.response.data.message);
     }
   };
+
+  static getTaskDetails = async (taskId: string) => {
+    try {
+      const options = await getAxoisRequestHeaders();
+
+      const response = await axiosPrivate.get(`tasks/get/${taskId}`, {
+        headers: options,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response.data.message);
+    }
+  };
 }

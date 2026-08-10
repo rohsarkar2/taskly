@@ -41,6 +41,7 @@ const Button: React.FC<ButtonProps> = ({
         styles.button,
         styles.primaryButton,
         { backgroundColor: backgroundColor || Colors.primary },
+        (disabled || loading) && styles.disabledButton,
         style,
       ]}
     >
@@ -133,5 +134,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "500",
     color: Colors.white,
+  },
+  disabledButton: {
+    backgroundColor: Colors.borderGray,
+    opacity: 0.6,
   },
 });

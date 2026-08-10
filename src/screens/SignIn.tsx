@@ -1,65 +1,44 @@
 import React, { useState } from "react";
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import Ionicons from "react-native-vector-icons/Ionicons";
-import { Container, Header, WhiteContainer, Button } from "../components";
+import {
+  Button,
+  Container,
+  Header,
+  Input,
+  WhiteContainer,
+} from "../components";
 import Colors from "../configs/Colors";
+import { currentUser } from "../data";
 import { SignInScreenProps } from "../navigation/NavigationTypes";
-import UserService from "../services/UserService";
-import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
 import { useAppDispatch } from "../store/hooks";
 import { setUserData } from "../store/slices/userSlice";
 
 const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
   const dispatch = useAppDispatch();
+  const [email, setEmail] = useState(currentUser.email);
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSignIn = async () => {
-    try {
-      setLoading(true);
+  const handleSignIn = () => {
+    setLoading(true);
 
-      let requestBody = {
-        email,
-        password,
-      };
-      const response = await UserService.loginUser(requestBody);
-
-      const userData = response.user;
-      const accessToken = userData.accessToken;
-      const refreshToken = userData.refreshToken;
-
-      // Save tokens securely
-      await saveAccessToken(accessToken);
-      await saveRefreshToken(refreshToken);
-
-      // Update user data in Redux store
-      dispatch(setUserData(userData));
-
-      setTimeout(() => {
-        navigation.pop(1);
-      }, 350);
-
+    // Static build: accept anything and drop into the app as the demo user.
+    setTimeout(() => {
       setLoading(false);
-    } catch (error) {
-      console.error("Error during login:", error);
-      setLoading(false);
-    }
-  };
-
-  const navigateToSignUp = () => {
-    navigation.navigate("SignUp");
+      dispatch(
+        setUserData({ ...currentUser, email: email || currentUser.email })
+      );
+      navigation.replace("MainTabs", { screen: "Home" });
+    }, 600);
   };
 
   return (
@@ -68,106 +47,63 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
       <WhiteContainer style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.keyboardView}
+          style={styles.flex}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.content}>
-              {/* Logo/Icon Section */}
-              <View style={styles.logoSection}>
-                <View style={styles.logoContainer}>
-                  <Image
-                    source={require("../assets/images/taskly-icon.png")}
-                    style={styles.logo}
-                  />
-                </View>
-                <Text style={styles.welcomeText}>Welcome Back!</Text>
-                <Text style={styles.subtitleText}>
-                  Sign in to manage your tasks
-                </Text>
-              </View>
+            <View style={styles.logoSection}>
+              <Image
+                source={require("../assets/images/taskly-icon.png")}
+                style={styles.logo}
+              />
+              <Text style={styles.welcome}>Welcome back</Text>
+              <Text style={styles.subtitle}>
+                Sign in to pick up where you left off
+              </Text>
+            </View>
 
-              {/* Form Section */}
-              <View style={styles.formSection}>
-                {/* Email Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons
-                      name="mail-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your email"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={email}
-                      onChangeText={setEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                    />
-                  </View>
-                </View>
+            <Input
+              label="Email"
+              icon="mail-outline"
+              placeholder="you@company.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+            />
 
-                {/* Password Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={20}
-                      color={Colors.mutedFont}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      placeholder="Enter your password"
-                      placeholderTextColor={Colors.mutedFont}
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.eyeIcon}
-                    >
-                      <Ionicons
-                        name={showPassword ? "eye-outline" : "eye-off-outline"}
-                        size={20}
-                        color={Colors.mutedFont}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+            <Input
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="Enter your password"
+              value={password}
+              onChangeText={setPassword}
+              isPassword
+              autoCapitalize="none"
+            />
 
-                {/* Forgot Password */}
-                <TouchableOpacity style={styles.forgotPassword}>
-                  <Text style={styles.forgotPasswordText}>
-                    Forgot Password?
-                  </Text>
-                </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.forgot}
+              onPress={() => navigation.navigate("ForgotPassword")}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
 
-                {/* Sign In Button */}
-                <Button
-                  title="Sign In"
-                  onPress={handleSignIn}
-                  style={[styles.signInButton]}
-                />
+            <Button title="Sign In" onPress={handleSignIn} loading={loading} />
 
-                {/* Sign Up Link */}
-                <View style={styles.signUpSection}>
-                  <Text style={styles.signUpText}>Don't have an account? </Text>
-                  <TouchableOpacity onPress={navigateToSignUp}>
-                    <Text style={styles.signUpLink}>Sign Up</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+            <View style={styles.signUpRow}>
+              <Text style={styles.signUpText}>Don't have an account? </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate("SignUp")}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.signUpLink}>Sign Up</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -181,96 +117,50 @@ export default SignIn;
 const styles = StyleSheet.create({
   container: {
     paddingTop: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  keyboardView: {
+  flex: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
+    paddingBottom: 40,
   },
   logoSection: {
     alignItems: "center",
-    marginBottom: 40,
-  },
-  logoContainer: {
-    // backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 32,
   },
   logo: {
-    width: 100,
-    height: 100,
+    width: 88,
+    height: 88,
     resizeMode: "contain",
   },
-  welcomeText: {
-    fontSize: 24,
+  welcome: {
+    fontSize: 23,
     fontWeight: "700",
     color: Colors.black,
-    marginBottom: 8,
+    marginTop: 12,
   },
-  subtitleText: {
-    fontSize: 15,
-    color: Colors.mutedFont,
-  },
-  formSection: {
-    flex: 1,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
+  subtitle: {
     fontSize: 14,
-    fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 8,
+    color: Colors.mutedFont,
+    marginTop: 6,
   },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderGray,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 50,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.black,
-  },
-  passwordInput: {
-    paddingRight: 40,
-  },
-  eyeIcon: {
-    position: "absolute",
-    right: 12,
-    padding: 4,
-  },
-  forgotPassword: {
+  forgot: {
     alignSelf: "flex-end",
     marginBottom: 24,
+    marginTop: -4,
   },
-  forgotPasswordText: {
-    fontSize: 14,
+  forgotText: {
+    fontSize: 13,
     fontWeight: "500",
     color: Colors.primary,
   },
-  signInButton: {
-    marginBottom: 24,
-  },
-  signUpSection: {
+  signUpRow: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    marginTop: 24,
   },
   signUpText: {
     fontSize: 14,
