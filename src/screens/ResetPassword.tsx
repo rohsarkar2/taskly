@@ -14,11 +14,12 @@ import {
   Container,
   Header,
   Input,
+  PasswordRules,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import Constant from "../configs/Constant";
 import { ResetPasswordScreenProps } from "../navigation/NavigationTypes";
+import { isPasswordValid } from "../utils/Formatters";
 
 const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
   navigation,
@@ -30,19 +31,8 @@ const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
 
-  const passwordRules = Constant.PASSWORD_RULES.map((rule) => {
-    const checks: Record<string, boolean> = {
-      "1": password.length >= 8,
-      "2": /[A-Z]/.test(password),
-      "3": /[a-z]/.test(password),
-      "4": /[0-9]/.test(password),
-      "5": /[^A-Za-z0-9]/.test(password),
-    };
-    return { ...rule, isMatched: checks[rule.id] ?? false };
-  });
-
   const handleReset = () => {
-    if (passwordRules.some((rule) => !rule.isMatched)) {
+    if (!isPasswordValid(password)) {
       setError("Password does not meet all requirements");
       return;
     }
@@ -102,27 +92,7 @@ const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
               autoCapitalize="none"
             />
 
-            <View style={styles.rules}>
-              {passwordRules.map((rule) => (
-                <View key={rule.id} style={styles.rule}>
-                  <Ionicons
-                    name={
-                      rule.isMatched ? "checkmark-circle" : "ellipse-outline"
-                    }
-                    size={15}
-                    color={rule.isMatched ? Colors.success : Colors.mutedFont}
-                  />
-                  <Text
-                    style={[
-                      styles.ruleText,
-                      rule.isMatched && styles.ruleTextMatched,
-                    ]}
-                  >
-                    {rule.name}
-                  </Text>
-                </View>
-              ))}
-            </View>
+            <PasswordRules password={password} style={styles.rules} />
 
             <Input
               label="Confirm Password"
@@ -187,18 +157,5 @@ const styles = StyleSheet.create({
   rules: {
     marginTop: -8,
     marginBottom: 20,
-    gap: 6,
-  },
-  rule: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  ruleText: {
-    fontSize: 12,
-    color: Colors.mutedFont,
-  },
-  ruleTextMatched: {
-    color: Colors.success,
   },
 });

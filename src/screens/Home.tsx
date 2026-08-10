@@ -52,7 +52,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
       todayTasks: open.filter((task) => daysUntil(task.dueDate) === 0),
       inProgressTasks: assigned.filter((task) => task.status === "in-progress"),
       pendingApprovalTasks: assigned.filter(
-        (task) => task.status === "pending-approval"
+        (task) => task.status === "pending-approval",
       ),
       completedTasks: assigned.filter((task) => task.status === "completed"),
       overdueTasks: open.filter((task) => isOverdue(task.dueDate, task.status)),
@@ -60,7 +60,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
         .filter((task) => daysUntil(task.dueDate) > 0)
         .sort(
           (a, b) =>
-            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
         ),
       approvalQueue: user ? getPendingApprovalsFor(user) : [],
     };
@@ -180,7 +180,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
 
           {/* Overdue */}
           {overdueTasks.length > 0 ? (
-            <View style={styles.section}>
+            <View style={[styles.section, { marginTop: 10 }]}>
               <SectionHeader
                 title={`Overdue (${overdueTasks.length})`}
                 actionTitle="See all"
@@ -359,7 +359,6 @@ const styles = StyleSheet.create({
   quickActions: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 20,
     marginBottom: 28,
   },
   primaryAction: {
@@ -393,7 +392,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   section: {
-    marginBottom: 28,
+    marginBottom: 20,
   },
   empty: {
     fontSize: 14,

@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,121 +15,357 @@ import {
   Container,
   Header,
   Input,
+  OtpInput,
+  PasswordRules,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
 import { ForgotPasswordScreenProps } from "../navigation/NavigationTypes";
+import { isPasswordValid } from "../utils/Formatters";
+
+const OTP_LENGTH = 6;
+const RESEND_SECONDS = 30;
+
+const STEPS = [
+  { key: "email", label: "Email" },
+  { key: "otp", label: "Verify" },
+  { key: "password", label: "Password" },
+] as const;
+
+type StepIndex = 0 | 1 | 2;
 
 const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
   navigation,
 }) => {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | undefined>();
+  const [step, setStep] = useState<StepIndex>(0);
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
 
-  const handleSubmit = () => {
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setError("Enter a valid email address");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | undefined>();
+
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string | undefined>();
+  const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
+
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | undefined>();
+  const [confirmError, setConfirmError] = useState<string | undefined>();
+
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Resend countdown only runs while the OTP step is on screen.
+  useEffect(() => {
+    if (step !== 1) {
       return;
     }
 
-    setError(undefined);
+    timer.current = setInterval(() => {
+      setSecondsLeft((seconds) => (seconds > 0 ? seconds - 1 : 0));
+    }, 1000);
+
+    return () => {
+      if (timer.current) {
+        clearInterval(timer.current);
+      }
+    };
+  }, [step]);
+
+  const handleSendCode = () => {
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setEmailError("Enter a valid email address");
+      return;
+    }
+
+    setEmailError(undefined);
     setLoading(true);
 
     setTimeout(() => {
       setLoading(false);
-      setSent(true);
+      setCode("");
+      setSecondsLeft(RESEND_SECONDS);
+      setStep(1);
     }, 600);
   };
 
-  if (sent) {
-    return (
-      <Container>
-        <Header title="Check your email" showBack />
-        <WhiteContainer style={styles.container}>
-          <View style={styles.confirmation}>
-            <View style={styles.confirmIcon}>
-              <Ionicons
-                name="mail-open-outline"
-                size={44}
-                color={Colors.primary}
-              />
-            </View>
-            <Text style={styles.confirmTitle}>Reset link sent</Text>
-            <Text style={styles.confirmBody}>
-              If an account exists with this email, we have sent a password
-              reset link to{"\n"}
-              <Text style={styles.email}>{email}</Text>
-            </Text>
+  const handleVerifyCode = () => {
+    if (code.length < OTP_LENGTH) {
+      setCodeError(`Enter all ${OTP_LENGTH} digits`);
+      return;
+    }
 
-            <Button
-              title="Open reset screen"
-              onPress={() => navigation.navigate("ResetPassword", { email })}
-              style={[styles.confirmAction]}
-            />
-            <TouchableOpacity
-              onPress={() => navigation.navigate("SignIn")}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.backLink}>Back to Sign In</Text>
-            </TouchableOpacity>
-          </View>
-        </WhiteContainer>
-      </Container>
-    );
-  }
+    setCodeError(undefined);
+    setLoading(true);
+
+    // Static build: any complete code passes. The backend verifies for real.
+    setTimeout(() => {
+      setLoading(false);
+      setStep(2);
+    }, 600);
+  };
+
+  const handleResend = () => {
+    if (secondsLeft > 0) {
+      return;
+    }
+
+    setCode("");
+    setCodeError(undefined);
+    setSecondsLeft(RESEND_SECONDS);
+    Alert.alert("Code sent", `We sent a new code to ${email}.`);
+  };
+
+  const handleResetPassword = () => {
+    const nextPasswordError = isPasswordValid(password)
+      ? undefined
+      : "Password does not meet all requirements";
+    const nextConfirmError =
+      password === confirmPassword ? undefined : "Passwords do not match";
+
+    setPasswordError(nextPasswordError);
+    setConfirmError(nextConfirmError);
+
+    if (nextPasswordError || nextConfirmError) {
+      return;
+    }
+
+    setLoading(true);
+
+    setTimeout(() => {
+      setLoading(false);
+      Alert.alert(
+        "Password updated",
+        "Your password has been changed. Sign in with your new password.",
+        [{ text: "OK", onPress: () => navigation.navigate("SignIn") }],
+      );
+    }, 700);
+  };
+
+  const handleBack = () => {
+    if (step === 0) {
+      navigation.goBack();
+      return;
+    }
+
+    setCodeError(undefined);
+    setPasswordError(undefined);
+    setConfirmError(undefined);
+    setStep((current) => (current - 1) as StepIndex);
+  };
+
+  const renderStepIndicator = () => (
+    <View style={styles.stepper}>
+      {STEPS.map((item, index) => {
+        const isDone = index < step;
+        const isCurrent = index === step;
+
+        return (
+          <React.Fragment key={item.key}>
+            {index > 0 ? (
+              <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
+            ) : null}
+            <View style={styles.stepItem}>
+              <View
+                style={[
+                  styles.stepCircle,
+                  isCurrent && styles.stepCircleCurrent,
+                  isDone && styles.stepCircleDone,
+                ]}
+              >
+                {isDone ? (
+                  <Ionicons name="checkmark" size={15} color={Colors.white} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.stepNumber,
+                      isCurrent && styles.stepNumberCurrent,
+                    ]}
+                  >
+                    {index + 1}
+                  </Text>
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.stepLabel,
+                  (isCurrent || isDone) && styles.stepLabelActive,
+                ]}
+              >
+                {item.label}
+              </Text>
+            </View>
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+
+  const renderEmailStep = () => (
+    <>
+      <View style={styles.iconCircle}>
+        <Ionicons name="mail-outline" size={32} color={Colors.primary} />
+      </View>
+      <Text style={styles.title}>What's your email?</Text>
+      <Text style={styles.subtitle}>
+        We'll send a {OTP_LENGTH}-digit verification code to your Taskly email.
+      </Text>
+
+      <Input
+        label="Email"
+        icon="mail-outline"
+        placeholder="you@company.com"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        error={emailError}
+      />
+
+      <Button title="Send Code" onPress={handleSendCode} loading={loading} />
+    </>
+  );
+
+  const renderOtpStep = () => (
+    <>
+      <View style={styles.iconCircle}>
+        <Ionicons
+          name="shield-checkmark-outline"
+          size={32}
+          color={Colors.primary}
+        />
+      </View>
+      <Text style={styles.title}>Enter the code</Text>
+      <Text style={styles.subtitle}>
+        We sent a {OTP_LENGTH}-digit code to{"\n"}
+        <Text style={styles.email}>{email}</Text>
+      </Text>
+
+      <OtpInput
+        value={code}
+        onChange={(next) => {
+          setCode(next);
+          setCodeError(undefined);
+        }}
+        length={OTP_LENGTH}
+        hasError={Boolean(codeError)}
+        autoFocus
+        style={styles.otp}
+      />
+
+      {codeError ? <Text style={styles.error}>{codeError}</Text> : null}
+
+      <View style={styles.resendRow}>
+        <Text style={styles.resendText}>Didn't get the code? </Text>
+        <TouchableOpacity
+          onPress={handleResend}
+          disabled={secondsLeft > 0}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.resendLink,
+              secondsLeft > 0 && styles.resendLinkDisabled,
+            ]}
+          >
+            {secondsLeft > 0 ? `Resend in ${secondsLeft}s` : "Resend"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Button
+        title="Verify Code"
+        onPress={handleVerifyCode}
+        loading={loading}
+        style={[styles.verifyButton]}
+      />
+
+      <TouchableOpacity
+        style={styles.changeEmail}
+        onPress={() => setStep(0)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.changeEmailText}>Use a different email</Text>
+      </TouchableOpacity>
+    </>
+  );
+
+  const renderPasswordStep = () => (
+    <>
+      <View style={styles.iconCircle}>
+        <Ionicons name="lock-open-outline" size={32} color={Colors.primary} />
+      </View>
+      <Text style={styles.title}>Set a new password</Text>
+      <Text style={styles.subtitle}>
+        Choose a password you haven't used before.
+      </Text>
+
+      <Input
+        label="New Password"
+        icon="lock-closed-outline"
+        placeholder="Enter a new password"
+        value={password}
+        onChangeText={setPassword}
+        isPassword
+        autoCapitalize="none"
+        error={passwordError}
+      />
+
+      <PasswordRules password={password} style={styles.rules} />
+
+      <Input
+        label="Confirm Password"
+        icon="lock-closed-outline"
+        placeholder="Re-enter the new password"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        isPassword
+        autoCapitalize="none"
+        error={confirmError}
+      />
+
+      <Button
+        title="Reset Password"
+        onPress={handleResetPassword}
+        loading={loading}
+      />
+    </>
+  );
 
   return (
     <Container>
-      <Header title="Forgot Password" showBack />
-      <WhiteContainer style={styles.container}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.flex}
-        >
+      <Header title="Forgot Password" showBack onBackPress={handleBack} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.flex}
+      >
+        <WhiteContainer style={styles.container}>
           <ScrollView
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.iconCircle}>
-              <Ionicons name="key-outline" size={34} color={Colors.primary} />
-            </View>
+            {renderStepIndicator()}
 
-            <Text style={styles.title}>Reset your password</Text>
-            <Text style={styles.subtitle}>
-              Enter the email you use for Taskly and we'll send you a link to
-              set a new password.
-            </Text>
-
-            <Input
-              label="Email"
-              icon="mail-outline"
-              placeholder="you@company.com"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={error}
-            />
-
-            <Button
-              title="Send Reset Link"
-              onPress={handleSubmit}
-              loading={loading}
-            />
+            {step === 0 ? renderEmailStep() : null}
+            {step === 1 ? renderOtpStep() : null}
+            {step === 2 ? renderPasswordStep() : null}
 
             <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
+              style={styles.backToSignIn}
+              onPress={() => navigation.navigate("SignIn")}
               activeOpacity={0.7}
             >
+              <Ionicons
+                name="arrow-back-outline"
+                size={16}
+                color={Colors.primary}
+              />
               <Text style={styles.backLink}>Back to Sign In</Text>
             </TouchableOpacity>
           </ScrollView>
-        </KeyboardAvoidingView>
-      </WhiteContainer>
+        </WhiteContainer>
+      </KeyboardAvoidingView>
     </Container>
   );
 };
@@ -136,25 +373,79 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
 export default ForgotPassword;
 
 const styles = StyleSheet.create({
-  container: {
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
   flex: {
     flex: 1,
+  },
+  container: {
+    paddingTop: 16,
+    paddingHorizontal: 20,
   },
   content: {
     paddingBottom: 40,
   },
-  iconCircle: {
+  stepper: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    marginBottom: 32,
+  },
+  stepItem: {
+    alignItems: "center",
     width: 72,
-    height: 72,
-    borderRadius: 36,
+  },
+  stepCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.leaderboardBorderVeryLight,
+  },
+  stepCircleCurrent: {
+    backgroundColor: Colors.secondary,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  stepCircleDone: {
+    backgroundColor: Colors.primary,
+  },
+  stepNumber: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.mutedFont,
+  },
+  stepNumberCurrent: {
+    color: Colors.primary,
+  },
+  stepLabel: {
+    fontSize: 11,
+    color: Colors.mutedFont,
+    marginTop: 6,
+  },
+  stepLabelActive: {
+    color: Colors.primary,
+    fontWeight: "600",
+  },
+  stepLine: {
+    height: 1.5,
+    flex: 1,
+    maxWidth: 40,
+    backgroundColor: Colors.leaderboardBorderVeryLight,
+    marginTop: 13,
+    marginHorizontal: -10,
+  },
+  stepLineDone: {
+    backgroundColor: Colors.primary,
+  },
+  iconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: Colors.secondary,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   title: {
     fontSize: 21,
@@ -166,54 +457,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.mutedFont,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 21,
     marginTop: 8,
     marginBottom: 28,
-  },
-  backButton: {
-    alignSelf: "center",
-    marginTop: 24,
-  },
-  backLink: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.primary,
-  },
-  confirmation: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingBottom: 60,
-  },
-  confirmIcon: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: Colors.secondary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-  },
-  confirmTitle: {
-    fontSize: 21,
-    fontWeight: "700",
-    color: Colors.black,
-  },
-  confirmBody: {
-    fontSize: 14,
-    color: Colors.mutedFont,
-    textAlign: "center",
-    lineHeight: 21,
-    marginTop: 10,
-    paddingHorizontal: 8,
   },
   email: {
     color: Colors.secondaryFont,
     fontWeight: "600",
   },
-  confirmAction: {
+  otp: {
+    marginBottom: 8,
+  },
+  error: {
+    fontSize: 12,
+    color: Colors.danger,
+    textAlign: "center",
+    marginTop: 4,
+  },
+  resendRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  resendText: {
+    fontSize: 13,
+    color: Colors.mutedFont,
+  },
+  resendLink: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+  resendLinkDisabled: {
+    color: Colors.mutedFont,
+    fontWeight: "500",
+  },
+  verifyButton: {
     marginTop: 28,
-    marginBottom: 16,
-    minWidth: 240,
+  },
+  changeEmail: {
+    alignSelf: "center",
+    marginTop: 16,
+  },
+  changeEmailText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: Colors.lightFont,
+  },
+  rules: {
+    marginTop: -8,
+    marginBottom: 20,
+  },
+  backToSignIn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "center",
+    marginTop: 20,
+  },
+  backLink: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.primary,
   },
 });

@@ -1,4 +1,5 @@
 import Colors from "../configs/Colors";
+import Constant from "../configs/Constant";
 import { ProjectStatus } from "../models/project";
 import { TaskPriority, TaskStatus } from "../models/task";
 import { UserRole, UserStatus } from "../models/user";
@@ -235,6 +236,31 @@ export const stripHtml = (html: string): string =>
     .replace(/&quot;/g, '"')
     .replace(/\s+/g, " ")
     .trim();
+
+export type PasswordRuleStatus = {
+  id: string;
+  name: string;
+  isMatched: boolean;
+};
+
+/** Checks Constant.PASSWORD_RULES against a password, keyed by rule id. */
+export const getPasswordRules = (password: string): PasswordRuleStatus[] => {
+  const checks: Record<string, boolean> = {
+    "1": password.length >= 8,
+    "2": /[A-Z]/.test(password),
+    "3": /[a-z]/.test(password),
+    "4": /[0-9]/.test(password),
+    "5": /[^A-Za-z0-9]/.test(password),
+  };
+
+  return Constant.PASSWORD_RULES.map((rule) => ({
+    ...rule,
+    isMatched: checks[rule.id] ?? false,
+  }));
+};
+
+export const isPasswordValid = (password: string): boolean =>
+  getPasswordRules(password).every((rule) => rule.isMatched);
 
 export const greetingForNow = (): string => {
   const hour = new Date().getHours();

@@ -22,6 +22,8 @@ import CommentItem from "./CommentItem";
 import TimelineItem from "./TimelineItem";
 import ListRow from "./ListRow";
 import OptionSheet from "./OptionSheet";
+import OtpInput from "./OtpInput";
+import PasswordRules from "./PasswordRules";
 
 export {
   Header,
@@ -49,6 +51,8 @@ export {
   TimelineItem,
   ListRow,
   OptionSheet,
+  OtpInput,
+  PasswordRules,
 };
 
 export type { TabItem } from "./SegmentedTabs";

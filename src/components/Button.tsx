@@ -18,7 +18,7 @@ type ButtonProps = {
   disabled?: boolean;
   loading?: boolean;
   backgroundColor?: string; // For solid color override
-  style?: ViewStyle[];
+  style?: ViewStyle | ViewStyle[];
   textStyle?: TextStyle;
 };
 
