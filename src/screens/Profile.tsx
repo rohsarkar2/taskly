@@ -47,7 +47,7 @@ const Profile: React.FC<ProfileScreenProps> = ({ navigation }) => {
           dispatch(clearUserData());
           // Reset the root stack, not the tab navigator this screen sits in.
           navigation.dispatch(
-            CommonActions.reset({ index: 0, routes: [{ name: "Welcome" }] })
+            CommonActions.reset({ index: 0, routes: [{ name: "Welcome" }] }),
           );
         },
       },
@@ -206,22 +206,22 @@ const styles = StyleSheet.create({
   },
   snapshot: {
     flexDirection: "row",
-    alignItems: "center",
     backgroundColor: Colors.white,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.borderGray,
-    paddingVertical: 16,
     marginTop: 20,
   },
   snapshotItem: {
     flex: 1,
     alignItems: "center",
+    // Padding lives here so the divider can run the full height of the card
+    paddingVertical: 16,
   },
   snapshotDivider: {
     width: 1,
-    height: 32,
-    backgroundColor: Colors.leaderboardBorderVeryLight,
+    alignSelf: "stretch",
+    backgroundColor: Colors.lightBorder,
   },
   snapshotValue: {
     fontSize: 20,
