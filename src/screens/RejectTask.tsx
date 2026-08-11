@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -18,8 +18,10 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getTaskById } from "../data";
+import { TaskModel } from "../models/task";
 import { RejectTaskScreenProps } from "../navigation/NavigationTypes";
+import TaskService from "../services/TaskService";
+import { mapApiTask } from "../utils/Mappers";
 
 const QUICK_REASONS = [
   "Please add test cases before submitting again.",
@@ -30,8 +32,8 @@ const QUICK_REASONS = [
 
 const RejectTask: React.FC<RejectTaskScreenProps> = ({ navigation, route }) => {
   const { taskId, mode } = route.params;
-  const task = getTaskById(taskId);
 
+  const [task, setTask] = useState<TaskModel | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,28 @@ const RejectTask: React.FC<RejectTaskScreenProps> = ({ navigation, route }) => {
   const heading = isReturn ? "Return for Changes" : "Reject Task";
   const resultingStatus = isReturn ? "In Progress" : "Rejected";
 
-  const handleSubmit = () => {
+  // Just for the header card — the action only needs the id.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await TaskService.getTaskDetails(taskId);
+        if (active) {
+          setTask(mapApiTask(response?.data?.task));
+        }
+      } catch {
+        // The card is optional; the reject/return call still works without it.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [taskId]);
+
+  const handleSubmit = async () => {
+    // `comments` is required by the API for both reject and return.
     if (reason.trim().length < 10) {
       setError("Give at least a sentence so the assignee knows what to fix");
       return;
@@ -49,14 +72,25 @@ const RejectTask: React.FC<RejectTaskScreenProps> = ({ navigation, route }) => {
     setError(undefined);
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = isReturn
+        ? await TaskService.returnTask(taskId, reason.trim())
+        : await TaskService.rejectTask(taskId, reason.trim());
+
       Alert.alert(
         isReturn ? "Returned" : "Rejected",
-        `The task is now ${resultingStatus} and the assignee has been notified.`,
+        response?.message ??
+          `The task is now ${resultingStatus} and the assignee has been notified.`,
         [{ text: "OK", onPress: () => navigation.popToTop() }]
       );
-    }, 700);
+    } catch (caught: any) {
+      Alert.alert(
+        isReturn ? "Couldn't return" : "Couldn't reject",
+        caught?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

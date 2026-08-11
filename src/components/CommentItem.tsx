@@ -2,7 +2,6 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Colors from "../configs/Colors";
 import { CommentModel } from "../models/task";
-import { getUserById } from "../data";
 import { formatRelativeTime } from "../utils/Formatters";
 import Avatar from "./Avatar";
 
@@ -21,12 +20,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
   onEditPress,
   onDeletePress,
 }) => {
-  const author = getUserById(comment.authorId);
+  const author = comment.author;
   const authorName = author?.name ?? "Unknown";
 
   // Highlight @mentions so they read as references, not plain text.
   const renderBody = () => {
-    const parts = comment.body.split(/(@[A-Z][a-z]+(?: [A-Z][a-z]+)?)/g);
+    const parts = comment.content.split(/(@[\w.@-]+(?: [A-Z][a-z]+)?)/g);
 
     return (
       <Text style={styles.body}>

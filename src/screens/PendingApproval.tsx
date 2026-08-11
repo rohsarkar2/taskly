@@ -1,5 +1,5 @@
-import React from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Badge,
@@ -9,11 +9,18 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { organization } from "../data";
 import { PendingApprovalScreenProps } from "../navigation/NavigationTypes";
+import ProfileService from "../services/ProfileService";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { clearUserData, setUserStatus } from "../store/slices/userSlice";
+import { clearOrganizationData } from "../store/slices/organizationSlice";
+import {
+  clearUserData,
+  setUserRole,
+  setUserStatus,
+} from "../store/slices/userSlice";
 import { getUserStatusMeta } from "../utils/Formatters";
+import { mapApiRole, mapApiStatus } from "../utils/Mappers";
+import { endSession } from "../utils/Session";
 
 const LOCKED_FEATURES = [
   { icon: "folder-open-outline", label: "Projects" },
@@ -26,19 +33,54 @@ const PendingApproval: React.FC<PendingApprovalScreenProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.user.userData);
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
+  );
+  const [checking, setChecking] = useState(false);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await endSession();
     dispatch(clearUserData());
+    dispatch(clearOrganizationData());
     navigation.reset({ index: 0, routes: [{ name: "Welcome" }] });
   };
 
-  // Static build only: lets you walk past the gate and see the rest of the app.
-  const handleSimulateApproval = () => {
-    dispatch(setUserStatus("active"));
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "MainTabs", params: { screen: "Home" } }],
-    });
+  /** `GET /profile/role` is the cheapest way to see if the admin approved us. */
+  const handleCheckStatus = async () => {
+    setChecking(true);
+
+    try {
+      const response = await ProfileService.getProfileRole();
+      const status = mapApiStatus(response?.data?.status);
+
+      dispatch(setUserRole(mapApiRole(response?.data?.role)));
+      dispatch(setUserStatus(status));
+
+      if (status === "active") {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "MainTabs", params: { screen: "Home" } }],
+        });
+        return;
+      }
+
+      if (status === "suspended") {
+        navigation.reset({ index: 0, routes: [{ name: "AccountSuspended" }] });
+        return;
+      }
+
+      Alert.alert(
+        "Still pending",
+        "Your administrator hasn't approved the account yet.",
+      );
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't check",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setChecking(false);
+    }
   };
 
   return (
@@ -66,7 +108,7 @@ const PendingApproval: React.FC<PendingApprovalScreenProps> = ({
           <View style={styles.card}>
             <View style={styles.cardRow}>
               <Text style={styles.cardLabel}>Organization</Text>
-              <Text style={styles.cardValue}>{organization.name}</Text>
+              <Text style={styles.cardValue}>{organization?.name ?? "—"}</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.cardRow}>
@@ -100,9 +142,9 @@ const PendingApproval: React.FC<PendingApprovalScreenProps> = ({
           </View>
 
           <Button
-            title="Continue as approved (demo)"
-            variant="secondary"
-            onPress={handleSimulateApproval}
+            title="Check approval status"
+            onPress={handleCheckStatus}
+            loading={checking}
             style={[styles.action]}
           />
           <Button

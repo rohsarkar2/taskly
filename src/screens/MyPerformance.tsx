@@ -1,9 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Container,
   Header,
+  Loader,
   ProgressBar,
   SectionHeader,
   StatCard,
@@ -11,77 +12,74 @@ import {
 } from "../components";
 import Colors from "../configs/Colors";
 import {
-  getProjectById,
-  getProjectsForUser,
-  getTasksAssignedTo,
-} from "../data";
+  DashboardSummaryModel,
+  WorkloadEntryModel,
+} from "../models/dashboard";
 import { MyPerformanceScreenProps } from "../navigation/NavigationTypes";
-import { useAppSelector } from "../store/hooks";
-import { isOverdue } from "../utils/Formatters";
+import DashboardService from "../services/DashboardService";
+import { getAvatarColor } from "../utils/Formatters";
+import { mapDashboardSummary, mapWorkloadEntry } from "../utils/Mappers";
 
 const MyPerformance: React.FC<MyPerformanceScreenProps> = () => {
-  const user = useAppSelector((state) => state.user.userData);
+  const [summary, setSummary] = useState<DashboardSummaryModel | null>(null);
+  const [workload, setWorkload] = useState<WorkloadEntryModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const metrics = useMemo(() => {
-    const assigned = user ? getTasksAssignedTo(user.id) : [];
-    const completed = assigned.filter((task) => task.status === "completed");
-    const inProgress = assigned.filter((task) => task.status === "in-progress");
-    const overdue = assigned.filter((task) =>
-      isOverdue(task.dueDate, task.status)
-    );
-    const awaiting = assigned.filter(
-      (task) => task.status === "pending-approval"
-    );
+  useEffect(() => {
+    let active = true;
 
-    return {
-      assigned: assigned.length,
-      completed: completed.length,
-      inProgress: inProgress.length,
-      overdue: overdue.length,
-      awaiting: awaiting.length,
-      completionRate: assigned.length
-        ? Math.round((completed.length / assigned.length) * 100)
-        : 0,
-      onTimeRate: completed.length
-        ? Math.round(
-            (completed.filter(
-              (task) =>
-                new Date(task.updatedAt).getTime() <=
-                new Date(task.dueDate).getTime()
-            ).length /
-              completed.length) *
-              100
-          )
-        : 0,
-    };
-  }, [user]);
+    (async () => {
+      try {
+        const [dashboardResponse, workloadResponse] = await Promise.all([
+          DashboardService.getDashboard(),
+          DashboardService.getWorkload(),
+        ]);
 
-  // Load per project, so it is obvious where the work sits.
-  const byProject = useMemo(() => {
-    if (!user) return [];
+        if (!active) return;
 
-    const assigned = getTasksAssignedTo(user.id);
-
-    return getProjectsForUser(user.id)
-      .map((project) => {
-        const projectTasks = assigned.filter(
-          (task) => task.projectId === project.id
+        setSummary(mapDashboardSummary(dashboardResponse?.data?.summary));
+        setWorkload(
+          (workloadResponse?.data?.workload ?? []).map(mapWorkloadEntry),
         );
-        const done = projectTasks.filter(
-          (task) => task.status === "completed"
-        ).length;
+      } catch (caught: any) {
+        if (active) {
+          setError(caught?.message ?? "Couldn't load your performance.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
 
-        return {
-          project,
-          total: projectTasks.length,
-          done,
-          percent: projectTasks.length
-            ? Math.round((done / projectTasks.length) * 100)
-            : 0,
-        };
-      })
-      .filter((entry) => entry.total > 0);
-  }, [user]);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const metrics = {
+    assigned: summary?.assignedTasks ?? 0,
+    completed: summary?.completedTasks ?? 0,
+    inProgress: summary?.inProgressTasks ?? 0,
+    overdue: summary?.overdueTasks ?? 0,
+    awaiting: summary?.pendingApprovals ?? 0,
+    completionRate: Math.round(summary?.completionRate ?? 0),
+  };
+
+  // Load per project, so it is obvious where the work sits. The API sends no
+  // project color, so tint it deterministically off the id like avatars do.
+  const byProject = useMemo(
+    () =>
+      workload
+        .filter((entry) => entry.total > 0)
+        .map((entry) => ({
+          ...entry,
+          color: getAvatarColor(entry.projectId),
+          percent: Math.round((entry.completed / entry.total) * 100),
+        })),
+    [workload],
+  );
 
   return (
     <Container>
@@ -118,7 +116,7 @@ const MyPerformance: React.FC<MyPerformanceScreenProps> = () => {
                   color={Colors.primary}
                 />
                 <Text style={styles.headlineFooterText}>
-                  {metrics.onTimeRate}% on time
+                  {summary?.openTasks ?? 0} still open
                 </Text>
               </View>
             </View>
@@ -166,35 +164,34 @@ const MyPerformance: React.FC<MyPerformanceScreenProps> = () => {
           {/* Per project */}
           <SectionHeader title="By project" style={styles.sectionHeader} />
           <View style={styles.projectCard}>
-            {byProject.length > 0 ? (
+            {loading ? (
+              <Loader />
+            ) : byProject.length > 0 ? (
               byProject.map((entry, index) => (
                 <View
-                  key={entry.project.id}
+                  key={entry.projectId}
                   style={[styles.projectRow, index > 0 && styles.projectRowGap]}
                 >
                   <View style={styles.projectHeader}>
                     <View
                       style={[
                         styles.projectDot,
-                        { backgroundColor: entry.project.color },
+                        { backgroundColor: entry.color },
                       ]}
                     />
                     <Text style={styles.projectName} numberOfLines={1}>
-                      {entry.project.name}
+                      {entry.projectName}
                     </Text>
                     <Text style={styles.projectCount}>
-                      {entry.done}/{entry.total}
+                      {entry.completed}/{entry.total}
                     </Text>
                   </View>
-                  <ProgressBar
-                    progress={entry.percent}
-                    color={entry.project.color}
-                  />
+                  <ProgressBar progress={entry.percent} color={entry.color} />
                 </View>
               ))
             ) : (
               <Text style={styles.empty}>
-                No tasks assigned to you yet this cycle.
+                {error ?? "No tasks assigned to you yet this cycle."}
               </Text>
             )}
           </View>

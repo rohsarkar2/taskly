@@ -1,36 +1,91 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { Container } from "../components";
 import Colors from "../configs/Colors";
 import { SplashScreenProps } from "../navigation/NavigationTypes";
-import { useAppSelector } from "../store/hooks";
+import UserService from "../services/UserService";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import {
+  clearOrganizationData,
+  setOrganizationData,
+} from "../store/slices/organizationSlice";
+import { clearUserData, setUserData } from "../store/slices/userSlice";
+import { mapApiOrganization, mapApiUser } from "../utils/Mappers";
+import { endSession } from "../utils/Session";
+import { getAccessToken, getRefreshToken } from "../utils/Utils";
 
 const Splash: React.FC<SplashScreenProps> = ({ navigation }) => {
-  const user = useAppSelector((state) => state.user.userData);
+  const dispatch = useAppDispatch();
+  // PersistGate holds the tree back until rehydration finishes, so the value
+  // read on the first render is the persisted session.
+  const persistedUser = useAppSelector((state) => state.user.userData);
+  const hasBootstrapped = useRef(false);
 
   useEffect(() => {
-    // Stands in for the stored-token check and refresh the real app will do.
-    const timer = setTimeout(() => {
-      if (!user) {
+    // `initialize` writes a fresh user back into the store, which re-renders
+    // this screen — the ref keeps the bootstrap to a single run.
+    if (hasBootstrapped.current) {
+      return;
+    }
+    hasBootstrapped.current = true;
+
+    const bootstrap = async () => {
+      const token = await getAccessToken().catch(() => null);
+
+      if (!token || !persistedUser) {
         navigation.replace("Welcome");
         return;
       }
 
-      if (user.status === "pending") {
-        navigation.replace("PendingApproval");
-        return;
+      try {
+        const response = await UserService.getUserData();
+
+        const data = response?.data;
+        const user = mapApiUser(data?.user);
+
+        // initialize doesn't reissue tokens, but the axios interceptor may have
+        // rotated the pair while the call was in flight — so re-read the
+        // keychain rather than trusting the persisted copy.
+        const [accessToken, refreshToken] = await Promise.all([
+          getAccessToken().catch(() => null),
+          getRefreshToken().catch(() => null),
+        ]);
+
+        dispatch(
+          setUserData({
+            ...user,
+            accessToken: accessToken ?? persistedUser.accessToken,
+            refreshToken: refreshToken ?? persistedUser.refreshToken,
+          }),
+        );
+
+        if (data?.organization) {
+          dispatch(setOrganizationData(mapApiOrganization(data.organization)));
+        }
+
+        if (data?.approvalPending || user.status === "pending") {
+          navigation.replace("PendingApproval");
+          return;
+        }
+
+        if (user.status === "suspended") {
+          navigation.replace("AccountSuspended");
+          return;
+        }
+
+        navigation.replace("MainTabs", { screen: "Home" });
+      } catch {
+        // Token refresh already had its chance in the axios interceptor, so a
+        // failure here means the session is unusable. Start over cleanly.
+        await endSession();
+        dispatch(clearUserData());
+        dispatch(clearOrganizationData());
+        navigation.replace("Welcome");
       }
+    };
 
-      if (user.status === "suspended") {
-        navigation.replace("AccountSuspended");
-        return;
-      }
-
-      navigation.replace("MainTabs", { screen: "Home" });
-    }, 1400);
-
-    return () => clearTimeout(timer);
-  }, [navigation, user]);
+    bootstrap();
+  }, [dispatch, navigation, persistedUser]);
 
   return (
     <Container style={styles.container}>

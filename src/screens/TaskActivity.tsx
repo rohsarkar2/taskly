@@ -1,33 +1,67 @@
-import React, { useMemo } from "react";
-import { SectionList, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { SectionList, StyleSheet, Text } from "react-native";
 import {
   Container,
   EmptyState,
   Header,
+  Loader,
   TimelineItem,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getActivityByTaskId, getTaskById } from "../data";
-import { ActivityModel } from "../models/task";
+import { ActivityModel, TaskModel } from "../models/task";
 import { TaskActivityScreenProps } from "../navigation/NavigationTypes";
+import TaskService from "../services/TaskService";
 import { formatDate } from "../utils/Formatters";
+import { mapApiTaskDetails } from "../utils/Mappers";
 
 const TaskActivity: React.FC<TaskActivityScreenProps> = ({ route }) => {
   const { taskId } = route.params;
-  const task = getTaskById(taskId);
 
-  // Grouped by day, newest first — the backend owns this feed.
+  const [task, setTask] = useState<TaskModel | null>(null);
+  const [activity, setActivity] = useState<ActivityModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // The timeline rides along inside the task detail payload.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await TaskService.getTaskDetails(taskId);
+        if (!active) return;
+
+        const details = mapApiTaskDetails(response?.data);
+        setTask(details.task);
+        setActivity(details.timeline);
+      } catch (caught: any) {
+        if (active) {
+          setError(caught?.message ?? "Couldn't load this activity feed.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [taskId]);
+
+  // Grouped by day, newest first — the backend owns the ordering.
   const sections = useMemo(() => {
     const grouped = new Map<string, ActivityModel[]>();
 
-    getActivityByTaskId(taskId).forEach((item) => {
+    activity.forEach((item) => {
       const day = formatDate(item.createdAt);
       grouped.set(day, [...(grouped.get(day) ?? []), item]);
     });
 
     return Array.from(grouped, ([title, data]) => ({ title, data }));
-  }, [taskId]);
+  }, [activity]);
 
   return (
     <Container>
@@ -58,11 +92,17 @@ const TaskActivity: React.FC<TaskActivityScreenProps> = ({ route }) => {
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
           ListEmptyComponent={
-            <EmptyState
-              icon="time-outline"
-              title="No activity yet"
-              subtitle="Every change to this task will be recorded here."
-            />
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "time-outline"}
+                title={error ? "Couldn't load activity" : "No activity yet"}
+                subtitle={
+                  error ?? "Every change to this task will be recorded here."
+                }
+              />
+            )
           }
         />
       </WhiteContainer>

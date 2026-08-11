@@ -19,11 +19,17 @@ import {
 } from "../components";
 import Colors from "../configs/Colors";
 import { ChangePasswordScreenProps } from "../navigation/NavigationTypes";
+import UserService from "../services/UserService";
+import { useAppDispatch } from "../store/hooks";
+import { clearOrganizationData } from "../store/slices/organizationSlice";
+import { clearUserData } from "../store/slices/userSlice";
 import { isPasswordValid } from "../utils/Formatters";
+import { clearAllTokens } from "../utils/Utils";
 
 const ChangePassword: React.FC<ChangePasswordScreenProps> = ({
   navigation,
 }) => {
+  const dispatch = useAppDispatch();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -34,7 +40,7 @@ const ChangePassword: React.FC<ChangePasswordScreenProps> = ({
   }>({});
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const nextErrors: typeof errors = {};
 
     if (!currentPassword) {
@@ -54,12 +60,35 @@ const ChangePassword: React.FC<ChangePasswordScreenProps> = ({
 
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      await UserService.changePassword({ currentPassword, newPassword });
+
+      // The API terminates every session on success, so this one is already
+      // dead — drop the local state and send them back to sign in. No logout
+      // call: the tokens it would use have just been revoked.
+      await clearAllTokens().catch(() => {});
+      dispatch(clearUserData());
+      dispatch(clearOrganizationData());
+
+      Alert.alert(
+        "Password changed",
+        "Please log in again with your new password.",
+        [
+          {
+            text: "OK",
+            onPress: () =>
+              navigation.reset({ index: 0, routes: [{ name: "SignIn" }] }),
+          },
+        ],
+      );
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't change your password",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
       setLoading(false);
-      Alert.alert("Password changed", "Use your new password next time.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
-    }, 700);
+    }
   };
 
   return (
@@ -117,7 +146,8 @@ const ChangePassword: React.FC<ChangePasswordScreenProps> = ({
                 color={Colors.primary}
               />
               <Text style={styles.noticeText}>
-                Changing your password signs you out of every other device.
+                Changing your password signs you out on every device, including
+                this one.
               </Text>
             </View>
 

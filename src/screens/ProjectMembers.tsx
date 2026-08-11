@@ -1,23 +1,22 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { SectionList, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Container,
   EmptyState,
   Header,
+  Loader,
   MemberRow,
   SearchBar,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import {
-  getProjectById,
-  getProjectMembers,
-  getTasksByProjectId,
-} from "../data";
-import { UserModel, UserRole } from "../models/user";
+import { ProjectMemberModel, ProjectModel } from "../models/project";
+import { UserRole } from "../models/user";
 import { ProjectMembersScreenProps } from "../navigation/NavigationTypes";
+import ProjectService from "../services/ProjectService";
 import { useAppSelector } from "../store/hooks";
+import { mapApiProject, mapApiProjectMember } from "../utils/Mappers";
 
 const ROLE_ORDER: { role: UserRole; title: string }[] = [
   { role: "manager", title: "Managers" },
@@ -33,23 +32,53 @@ const ProjectMembers: React.FC<ProjectMembersScreenProps> = ({
   const user = useAppSelector((state) => state.user.userData);
   const [query, setQuery] = useState("");
 
-  const project = getProjectById(projectId);
-  const members = useMemo(() => getProjectMembers(projectId), [projectId]);
-  const projectTasks = useMemo(
-    () => getTasksByProjectId(projectId),
-    [projectId]
-  );
+  const [project, setProject] = useState<ProjectModel | null>(null);
+  const [members, setMembers] = useState<ProjectMemberModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const [membersResponse, detailsResponse] = await Promise.all([
+          ProjectService.getProjectMembers(projectId),
+          ProjectService.getProjectDetails(projectId),
+        ]);
+        if (!active) return;
+
+        setMembers(
+          (membersResponse?.data?.members ?? []).map(mapApiProjectMember),
+        );
+        setProject(mapApiProject(detailsResponse?.data?.project));
+      } catch (caught: any) {
+        if (active) {
+          setError(caught?.message ?? "Couldn't load the member list.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   // Leads and managers can drill into a member; team members only browse.
   const canOpenMember = user?.role === "team-lead" || user?.role === "manager";
 
+  // Search runs locally — the members endpoint takes no query parameters.
   const sections = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const filtered = members.filter(
       (member) =>
         !normalizedQuery ||
         member.name.toLowerCase().includes(normalizedQuery) ||
-        member.jobTitle.toLowerCase().includes(normalizedQuery)
+        member.designation.toLowerCase().includes(normalizedQuery)
     );
 
     return ROLE_ORDER.map(({ role, title }) => ({
@@ -58,12 +87,7 @@ const ProjectMembers: React.FC<ProjectMembersScreenProps> = ({
     })).filter((section) => section.data.length > 0);
   }, [members, query]);
 
-  const openTaskCount = (memberId: string) =>
-    projectTasks.filter(
-      (task) => task.assigneeId === memberId && task.status !== "completed"
-    ).length;
-
-  const handleMemberPress = (member: UserModel) => {
+  const handleMemberPress = (member: { id: string }) => {
     if (canOpenMember) {
       navigation.navigate("TeamMemberDetails", { userId: member.id });
     }
@@ -95,20 +119,20 @@ const ProjectMembers: React.FC<ProjectMembersScreenProps> = ({
           renderSectionHeader={({ section }) => (
             <Text style={styles.sectionHeader}>{section.title}</Text>
           )}
-          renderItem={({ item }) => {
-            const openTasks = openTaskCount(item.id);
-
-            return (
-              <MemberRow
-                member={item}
-                subtitle={`${item.jobTitle} · ${openTasks} open task${
-                  openTasks === 1 ? "" : "s"
-                }`}
-                onPress={canOpenMember ? handleMemberPress : undefined}
-                showChevron={canOpenMember}
-              />
-            );
-          }}
+          renderItem={({ item }) => (
+            <MemberRow
+              member={{
+                id: item.id,
+                name: item.name,
+                role: item.role,
+                image: item.avatar,
+                jobTitle: item.designation,
+              }}
+              subtitle={item.designation || item.email}
+              onPress={canOpenMember ? handleMemberPress : undefined}
+              showChevron={canOpenMember}
+            />
+          )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           contentContainerStyle={[
             styles.list,
@@ -117,11 +141,15 @@ const ProjectMembers: React.FC<ProjectMembersScreenProps> = ({
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
           ListEmptyComponent={
-            <EmptyState
-              icon="people-outline"
-              title="No members found"
-              subtitle="Try a different search term."
-            />
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "people-outline"}
+                title={error ? "Couldn't load members" : "No members found"}
+                subtitle={error ?? "Try a different search term."}
+              />
+            )
           }
         />
       </WhiteContainer>

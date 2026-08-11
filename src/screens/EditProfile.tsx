@@ -20,22 +20,27 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { organization } from "../data";
 import { EditProfileScreenProps } from "../navigation/NavigationTypes";
+import ProfileService from "../services/ProfileService";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { updateUserData } from "../store/slices/userSlice";
 import { getUserRoleMeta } from "../utils/Formatters";
+import { mapApiUser } from "../utils/Mappers";
 
 const EditProfile: React.FC<EditProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.user.userData);
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
+  );
 
   const [name, setName] = useState(user?.name ?? "");
   const [jobTitle, setJobTitle] = useState(user?.jobTitle ?? "");
+  const [department, setDepartment] = useState(user?.department ?? "");
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? "");
   const [loading, setLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert("Missing name", "Your name can't be empty.");
       return;
@@ -43,20 +48,46 @@ const EditProfile: React.FC<EditProfileScreenProps> = ({ navigation }) => {
 
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // `role` and `status` are deliberately not editable here.
+      const response = await ProfileService.updateProfile({
+        name: name.trim(),
+        designation: jobTitle.trim(),
+        department: department.trim(),
+        phoneNumber: phoneNumber.trim(),
+      });
+
       dispatch(
-        updateUserData({
-          name: name.trim(),
-          jobTitle: jobTitle.trim(),
-          phoneNumber: phoneNumber.trim(),
-        })
+        response?.data?.user
+          ? updateUserData(mapApiUser(response.data.user))
+          : updateUserData({
+              name: name.trim(),
+              jobTitle: jobTitle.trim(),
+              department: department.trim(),
+              phoneNumber: phoneNumber.trim(),
+            }),
       );
+
       Alert.alert("Profile updated", "Your changes have been saved.", [
         { text: "OK", onPress: () => navigation.goBack() },
       ]);
-    }, 700);
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't save",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // ProfileService.uploadAvatar posts the multipart body; picking the file
+  // needs an image picker dependency that isn't installed yet.
+  const handleChangePhoto = () =>
+    Alert.alert(
+      "Change photo",
+      "Add an image picker (react-native-image-picker) to enable uploads.",
+    );
 
   return (
     <Container>
@@ -75,12 +106,7 @@ const EditProfile: React.FC<EditProfileScreenProps> = ({ navigation }) => {
               <Avatar name={name || "User"} image={user?.image} size={88} />
               <TouchableOpacity
                 style={styles.changePhoto}
-                onPress={() =>
-                  Alert.alert(
-                    "Change photo",
-                    "Image upload lands with the API work."
-                  )
-                }
+                onPress={handleChangePhoto}
                 activeOpacity={0.7}
               >
                 <Ionicons
@@ -109,6 +135,14 @@ const EditProfile: React.FC<EditProfileScreenProps> = ({ navigation }) => {
             />
 
             <Input
+              label="Department"
+              icon="business-outline"
+              placeholder="Which team you're on"
+              value={department}
+              onChangeText={setDepartment}
+            />
+
+            <Input
               label="Phone Number"
               icon="call-outline"
               placeholder="+91 00000 00000"
@@ -134,7 +168,9 @@ const EditProfile: React.FC<EditProfileScreenProps> = ({ navigation }) => {
               <View style={styles.readOnlyDivider} />
               <View style={styles.readOnlyRow}>
                 <Text style={styles.readOnlyKey}>Organization</Text>
-                <Text style={styles.readOnlyValue}>{organization.name}</Text>
+                <Text style={styles.readOnlyValue}>
+                  {organization?.name ?? "—"}
+                </Text>
               </View>
             </View>
 

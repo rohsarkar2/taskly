@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Avatar,
@@ -14,12 +15,13 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getPendingApprovalsFor, getProjectById, getUserById } from "../data";
 import { TaskModel } from "../models/task";
 import { PendingApprovalsScreenProps } from "../navigation/NavigationTypes";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
 import {
   formatDueDate,
@@ -27,26 +29,54 @@ import {
   getTaskPriorityMeta,
   isOverdue,
 } from "../utils/Formatters";
+import { mapApiTask } from "../utils/Mappers";
 
 const PendingApprovals: React.FC<PendingApprovalsScreenProps> = ({
   navigation,
 }) => {
   const user = useAppSelector((state) => state.user.userData);
+  const [queue, setQueue] = useState<TaskModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const queue = useMemo(
-    () => (user ? getPendingApprovalsFor(user) : []),
-    [user]
+  // Only tasks where you are listed as an approver come back here.
+  const loadQueue = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await TaskService.pendingApprovals();
+      setQueue((response?.data?.tasks ?? []).map(mapApiTask));
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load your approval queue.");
+      setQueue([]);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        await loadQueue();
+        if (active) {
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [loadQueue]),
   );
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 700);
+    await loadQueue();
+    setRefreshing(false);
   };
 
   const renderItem = (task: TaskModel) => {
-    const project = getProjectById(task.projectId);
-    const submitter = getUserById(task.assigneeId);
+    const submitter = task.assignee;
     const overdue = isOverdue(task.dueDate, task.status);
 
     return (
@@ -65,9 +95,13 @@ const PendingApprovals: React.FC<PendingApprovalsScreenProps> = ({
         </View>
 
         <View style={styles.submitterRow}>
-          <Avatar name={submitter?.name ?? "Unknown"} size={26} />
+          <Avatar
+            name={submitter?.name ?? "Unknown"}
+            image={submitter?.image}
+            size={26}
+          />
           <Text style={styles.submitterText}>
-            {submitter?.name ?? "Unknown"} · {project?.name ?? "Project"}
+            {submitter?.name ?? "Unknown"} · {task.project?.name ?? "Project"}
           </Text>
         </View>
 
@@ -89,7 +123,7 @@ const PendingApprovals: React.FC<PendingApprovalsScreenProps> = ({
               color={Colors.lightFont}
             />
             <Text style={styles.metaText}>
-              Submitted {formatRelativeTime(task.updatedAt)}
+              Submitted {formatRelativeTime(task.submittedAt ?? task.updatedAt)}
             </Text>
           </View>
         </View>
@@ -130,15 +164,22 @@ const PendingApprovals: React.FC<PendingApprovalsScreenProps> = ({
           ]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <EmptyState
-              icon="shield-checkmark-outline"
-              title="Nothing to approve"
-              subtitle={
-                user?.role === "team-member"
-                  ? "Approvals are handled by Team Leads and Managers."
-                  : "You're all caught up — no tasks are waiting on you."
-              }
-            />
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={
+                  error ? "cloud-offline-outline" : "shield-checkmark-outline"
+                }
+                title={error ? "Couldn't load approvals" : "Nothing to approve"}
+                subtitle={
+                  error ??
+                  (user?.role === "team-member"
+                    ? "Approvals are handled by Team Leads and Managers."
+                    : "You're all caught up — no tasks are waiting on you.")
+                }
+              />
+            )
           }
           refreshControl={
             <RefreshControl

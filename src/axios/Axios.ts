@@ -33,16 +33,14 @@ axiosPrivate.interceptors.response.use(
           return Promise.reject(error);
         }
 
-        // Get new access token
-        const response = await axiosPrivate.get(
-          `${Configs.TASKLY_BASE_URL}users/refresh-token`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        // Get new access token. Public endpoint, so use axiosPublic — routing
+        // it through axiosPrivate would re-enter this interceptor on failure.
+        const response = await axiosPublic.post(`employee/auth/refresh-token`, {
+          refreshToken: token,
+        });
 
-        const newAccessToken = response.data?.accessToken;
-        const newRefreshToken = response.data?.refreshToken;
+        const newAccessToken = response.data?.data?.accessToken;
+        const newRefreshToken = response.data?.data?.refreshToken;
 
         if (newAccessToken) {
           await saveAccessToken(newAccessToken);

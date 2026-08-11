@@ -9,7 +9,9 @@ export type UserModel = {
   image: string;
   role: UserRole;
   status: UserStatus;
+  /** `designation` on the API. */
   jobTitle: string;
+  department?: string;
   phoneNumber?: string;
   organizationId: string;
   joinedAt: string; // ISO string format

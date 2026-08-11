@@ -21,6 +21,7 @@ import {
 } from "../components";
 import Colors from "../configs/Colors";
 import { ForgotPasswordScreenProps } from "../navigation/NavigationTypes";
+import UserService from "../services/UserService";
 import { isPasswordValid } from "../utils/Formatters";
 
 const OTP_LENGTH = 6;
@@ -52,6 +53,10 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
   const [passwordError, setPasswordError] = useState<string | undefined>();
   const [confirmError, setConfirmError] = useState<string | undefined>();
 
+  // Handed out by verify-reset-otp and consumed by reset-password. Single use,
+  // 15 minutes, and a fresh OTP request invalidates it.
+  const [resetToken, setResetToken] = useState("");
+
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Resend countdown only runs while the OTP step is on screen.
@@ -71,7 +76,23 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
     };
   }, [step]);
 
-  const handleSendCode = () => {
+  // Always resolves 200, whether or not the email is registered — the response
+  // deliberately reveals nothing, so the UI just moves on to the code step.
+  const requestCode = async () => {
+    const response = await UserService.forgotPassword({
+      email: email.trim().toLowerCase(),
+    });
+
+    setCode("");
+    setCodeError(undefined);
+    // Any token from an earlier verification is dead once a new OTP is issued.
+    setResetToken("");
+    setSecondsLeft(RESEND_SECONDS);
+
+    return response;
+  };
+
+  const handleSendCode = async () => {
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       setEmailError("Enter a valid email address");
       return;
@@ -80,15 +101,20 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
     setEmailError(undefined);
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
-      setCode("");
-      setSecondsLeft(RESEND_SECONDS);
+    try {
+      await requestCode();
       setStep(1);
-    }, 600);
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't send the code",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleVerifyCode = () => {
+  const handleVerifyCode = async () => {
     if (code.length < OTP_LENGTH) {
       setCodeError(`Enter all ${OTP_LENGTH} digits`);
       return;
@@ -97,25 +123,50 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
     setCodeError(undefined);
     setLoading(true);
 
-    // Static build: any complete code passes. The backend verifies for real.
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await UserService.verifyResetOtp({
+        email: email.trim().toLowerCase(),
+        otp: code,
+      });
+
+      const token = response?.data?.resetToken;
+
+      if (!token) {
+        throw new Error("The verification code is invalid or has expired");
+      }
+
+      setResetToken(token);
       setStep(2);
-    }, 600);
+    } catch (error: any) {
+      // Wrong code, expired code, or the attempt budget is spent — the API
+      // answers identically for all three, so show its message as-is.
+      setCodeError(error?.message ?? "The verification code is invalid");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleResend = () => {
-    if (secondsLeft > 0) {
+  const handleResend = async () => {
+    if (secondsLeft > 0 || loading) {
       return;
     }
 
-    setCode("");
-    setCodeError(undefined);
-    setSecondsLeft(RESEND_SECONDS);
-    Alert.alert("Code sent", `We sent a new code to ${email}.`);
+    setLoading(true);
+
+    try {
+      await requestCode();
+      Alert.alert("Code sent", `We sent a new code to ${email}.`);
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't send the code",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     const nextPasswordError = isPasswordValid(password)
       ? undefined
       : "Password does not meet all requirements";
@@ -131,14 +182,40 @@ const ForgotPassword: React.FC<ForgotPasswordScreenProps> = ({
 
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await UserService.resetPassword({
+        token: resetToken,
+        newPassword: password,
+      });
+
       Alert.alert(
         "Password updated",
-        "Your password has been changed. Sign in with your new password.",
+        response?.message ??
+          "Your password has been changed. Sign in with your new password.",
         [{ text: "OK", onPress: () => navigation.navigate("SignIn") }],
       );
-    }, 700);
+    } catch (error: any) {
+      // The token is single-use and only lives 15 minutes. Once it's spent or
+      // expired there is nothing to retry on this step — send them back to the
+      // start for a new code.
+      Alert.alert(
+        "Couldn't reset your password",
+        error?.message ?? "Something went wrong. Please try again.",
+        [
+          {
+            text: "Start over",
+            onPress: () => {
+              setResetToken("");
+              setPassword("");
+              setConfirmPassword("");
+              setStep(0);
+            },
+          },
+        ],
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBack = () => {

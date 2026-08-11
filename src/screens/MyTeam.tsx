@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Container,
@@ -18,38 +19,61 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import {
-  getPendingApprovalsFor,
-  getTasksAssignedTo,
-  getTeamMembersFor,
-} from "../data";
-import { UserModel } from "../models/user";
+import { ProjectMemberModel } from "../models/project";
+import { TaskModel } from "../models/task";
 import { MyTeamScreenProps } from "../navigation/NavigationTypes";
+import DashboardService from "../services/DashboardService";
 import { useAppSelector } from "../store/hooks";
 import { isOverdue } from "../utils/Formatters";
+import { fetchTeamRoster, fetchTeamTasks } from "../utils/Team";
 
 const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
   const user = useAppSelector((state) => state.user.userData);
   const [query, setQuery] = useState("");
 
-  const team = useMemo(() => (user ? getTeamMembersFor(user) : []), [user]);
-  const approvals = useMemo(
-    () => (user ? getPendingApprovalsFor(user) : []),
-    [user]
+  const [team, setTeam] = useState<ProjectMemberModel[]>([]);
+  const [teamTasks, setTeamTasks] = useState<TaskModel[]>([]);
+  const [approvalCount, setApprovalCount] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        const [roster, tasks] = await Promise.all([
+          fetchTeamRoster(user?.id).catch(() => []),
+          fetchTeamTasks().catch(() => []),
+        ]);
+
+        if (!active) return;
+        setTeam(roster);
+        setTeamTasks(tasks);
+
+        try {
+          const response = await DashboardService.getDashboard();
+          if (active) {
+            setApprovalCount(response?.data?.summary?.awaitingMyApproval ?? 0);
+          }
+        } catch {
+          // The approvals tile just stays at zero.
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [user?.id]),
   );
 
-  const teamStats = useMemo(() => {
-    const allTeamTasks = team.flatMap((member) =>
-      getTasksAssignedTo(member.id)
-    );
-
-    return {
-      open: allTeamTasks.filter((task) => task.status !== "completed").length,
-      overdue: allTeamTasks.filter((task) =>
+  const teamStats = useMemo(
+    () => ({
+      open: teamTasks.filter((task) => task.status !== "completed").length,
+      overdue: teamTasks.filter((task) =>
         isOverdue(task.dueDate, task.status)
       ).length,
-    };
-  }, [team]);
+    }),
+    [teamTasks]
+  );
 
   const visibleTeam = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -58,15 +82,16 @@ const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
       (member) =>
         !normalizedQuery ||
         member.name.toLowerCase().includes(normalizedQuery) ||
-        member.jobTitle.toLowerCase().includes(normalizedQuery)
+        member.designation.toLowerCase().includes(normalizedQuery)
     );
   }, [team, query]);
 
   const openTaskCount = (memberId: string) =>
-    getTasksAssignedTo(memberId).filter((task) => task.status !== "completed")
-      .length;
+    teamTasks.filter(
+      (task) => task.assignee?.id === memberId && task.status !== "completed"
+    ).length;
 
-  const handleMemberPress = (member: UserModel) =>
+  const handleMemberPress = (member: { id: string }) =>
     navigation.navigate("TeamMemberDetails", { userId: member.id });
 
   if (user?.role === "team-member") {
@@ -115,7 +140,7 @@ const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
             <StatCard
               icon="shield-checkmark-outline"
               label="Approvals"
-              value={approvals.length}
+              value={approvalCount}
               color={Colors.warning}
               onPress={() => navigation.navigate("PendingApprovals")}
             />
@@ -170,8 +195,14 @@ const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
                   <View key={member.id}>
                     {index > 0 ? <View style={styles.divider} /> : null}
                     <MemberRow
-                      member={member}
-                      subtitle={`${member.jobTitle} · ${open} open task${
+                      member={{
+                        id: member.id,
+                        name: member.name,
+                        role: member.role,
+                        image: member.avatar,
+                        jobTitle: member.designation,
+                      }}
+                      subtitle={`${member.designation} · ${open} open task${
                         open === 1 ? "" : "s"
                       }`}
                       onPress={handleMemberPress}

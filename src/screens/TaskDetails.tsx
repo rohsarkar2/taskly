@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Avatar,
@@ -16,6 +17,7 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   RenderHtml,
   SectionHeader,
   TimelineItem,
@@ -23,24 +25,27 @@ import {
 } from "../components";
 import Colors from "../configs/Colors";
 import {
-  getActivityByTaskId,
-  getCommentsByTaskId,
-  getProjectById,
-  getTaskById,
-  getUserById,
-} from "../data";
-import { TaskStatus } from "../models/task";
+  ActivityModel,
+  AttachmentModel,
+  CommentModel,
+  TaskModel,
+  TaskPermissionsModel,
+} from "../models/task";
 import { TaskDetailsScreenProps } from "../navigation/NavigationTypes";
+import CommentService from "../services/CommentService";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
 import {
   formatDate,
   formatDateTime,
   formatDueDate,
+  getAvatarColor,
   getTaskPriorityMeta,
   getTaskStatusIcon,
   getTaskStatusMeta,
   isOverdue,
 } from "../utils/Formatters";
+import { mapApiComment, mapApiTaskDetails } from "../utils/Mappers";
 
 const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
   navigation,
@@ -49,12 +54,66 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
   const { taskId } = route.params;
   const user = useAppSelector((state) => state.user.userData);
 
-  const task = getTaskById(taskId);
-  // Local status only — the backend owns the real transition.
-  const [status, setStatus] = useState<TaskStatus | undefined>(task?.status);
+  const [task, setTask] = useState<TaskModel | null>(null);
+  const [permissions, setPermissions] = useState<TaskPermissionsModel | null>(
+    null,
+  );
+  const [activity, setActivity] = useState<ActivityModel[]>([]);
+  const [comments, setComments] = useState<CommentModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const comments = useMemo(() => getCommentsByTaskId(taskId), [taskId]);
-  const activity = useMemo(() => getActivityByTaskId(taskId), [taskId]);
+  const loadTask = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await TaskService.getTaskDetails(taskId);
+      const details = mapApiTaskDetails(response?.data);
+
+      setTask(details.task);
+      setPermissions(details.permissions);
+      setActivity(details.timeline);
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load this task.");
+    }
+
+    // Comments have their own paginated endpoint; only the preview is needed
+    // here, so a failure shouldn't take the whole screen down.
+    try {
+      const response = await CommentService.commentList(taskId, 1, 5);
+      setComments((response?.data?.comments ?? []).map(mapApiComment));
+    } catch {
+      setComments([]);
+    }
+  }, [taskId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        await loadTask();
+        if (active) {
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [loadTask]),
+  );
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Task" showBack />
+        <WhiteContainer>
+          <Loader style={styles.screenLoader} size="large" />
+        </WhiteContainer>
+      </Container>
+    );
+  }
 
   if (!task) {
     return (
@@ -63,51 +122,110 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
         <WhiteContainer>
           <EmptyState
             icon="alert-circle-outline"
-            title="Task not found"
-            subtitle="This task may have been deleted or moved."
+            title={error ? "Couldn't load task" : "Task not found"}
+            subtitle={error ?? "This task may have been deleted or moved."}
           />
         </WhiteContainer>
       </Container>
     );
   }
 
-  const project = getProjectById(task.projectId);
-  const assignee = getUserById(task.assigneeId);
-  const creator = getUserById(task.creatorId);
-  const approver = getUserById(task.approverId);
-  const currentStatus = status ?? task.status;
+  const project = task.project;
+  const assignee = task.assignee;
+  const creator = task.creator;
+  const currentStatus = task.status;
   const statusMeta = getTaskStatusMeta(currentStatus);
   const overdue = isOverdue(task.dueDate, currentStatus);
 
-  const isAssignee = task.assigneeId === user?.id;
-  const isCreator = task.creatorId === user?.id;
+  const isAssignee = assignee?.id === user?.id;
+  // Approvers can come back as bare ids with no name to show.
+  const namedApprovers = task.approvers.filter((person) => person.name);
   const canApprove =
-    (user?.role === "team-lead" || user?.role === "manager") &&
-    !isCreator &&
     currentStatus === "pending-approval" &&
-    (!task.approverId || task.approverId === user?.id);
+    task.approvers.some((person) => person.id === user?.id);
 
-  const applyStatus = (next: TaskStatus, message: string) => {
-    setStatus(next);
-    Alert.alert("Status updated", message);
+  /** Every transition round-trips, then the screen refetches the real state. */
+  const runAction = async (
+    action: () => Promise<any>,
+    fallbackMessage: string,
+  ) => {
+    setWorking(true);
+
+    try {
+      const response = await action();
+      await loadTask();
+      Alert.alert("Task updated", response?.message ?? fallbackMessage);
+    } catch (caught: any) {
+      Alert.alert(
+        "Couldn't update",
+        caught?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setWorking(false);
+    }
   };
+
+  // TaskService.uploadAttachments posts the multipart body; picking the file
+  // needs a document picker dependency that isn't installed yet.
+  const handleAddAttachment = () =>
+    Alert.alert(
+      "Add attachment",
+      "Add a file picker (react-native-document-picker) to enable uploads.",
+    );
+
+  const handleDeleteAttachment = (attachment: AttachmentModel) =>
+    Alert.alert("Remove attachment", `Delete "${attachment.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await TaskService.deleteAttachment(task.id, attachment.id);
+          } catch (caught: any) {
+            Alert.alert(
+              "Couldn't remove",
+              caught?.message ?? "Something went wrong. Please try again.",
+            );
+          }
+          await loadTask();
+        },
+      },
+    ]);
+
+  const handleDelete = () =>
+    Alert.alert("Delete task", "This can't be undone. Delete this task?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await TaskService.deleteTask(task.id);
+            navigation.goBack();
+          } catch (caught: any) {
+            Alert.alert(
+              "Couldn't delete",
+              caught?.message ?? "Something went wrong. Please try again.",
+            );
+          }
+        },
+      },
+    ]);
 
   const renderPersonRow = (
     label: string,
     name?: string,
-    subtitle?: string,
-    fallback?: string
+    image?: string,
+    fallback?: string,
   ) => (
     <View style={styles.personRow}>
       <Text style={styles.personLabel}>{label}</Text>
       {name ? (
         <View style={styles.personValue}>
-          <Avatar name={name} size={30} />
+          <Avatar name={name} image={image} size={30} />
           <View style={styles.personText}>
             <Text style={styles.personName}>{name}</Text>
-            {subtitle ? (
-              <Text style={styles.personSubtitle}>{subtitle}</Text>
-            ) : null}
           </View>
         </View>
       ) : (
@@ -119,59 +237,89 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
   const renderActions = () => {
     const actions: React.ReactNode[] = [];
 
+    // The assignment has to be accepted before the work can start.
+    if (isAssignee && !task.assignmentAcceptedAt) {
+      actions.push(
+        <Button
+          key="accept"
+          title="Accept Assignment"
+          loading={working}
+          onPress={() =>
+            runAction(
+              () => TaskService.acceptTask(task.id),
+              "Assignment accepted.",
+            )
+          }
+        />,
+      );
+    }
+
     if (isAssignee && currentStatus === "to-do") {
       actions.push(
         <Button
           key="start"
           title="Start Task"
+          loading={working}
           onPress={() =>
-            applyStatus("in-progress", "This task is now in progress.")
+            runAction(
+              () => TaskService.startTask(task.id),
+              "This task is now in progress.",
+            )
           }
-        />
+        />,
       );
     }
 
     if (isAssignee && currentStatus === "in-progress") {
+      // /complete branches server side: it either finishes the task or sends
+      // it for review, depending on the project's workflow.
       actions.push(
         <Button
-          key="submit"
-          title="Submit for Approval"
+          key="complete"
+          title={
+            task.requiresApproval ? "Submit for Approval" : "Mark Complete"
+          }
+          loading={working}
           onPress={() =>
-            applyStatus("pending-approval", "Sent to the approver for review.")
+            runAction(
+              () => TaskService.completeTask(task.id),
+              task.requiresApproval
+                ? "Sent to the approver for review."
+                : "This task is complete.",
+            )
           }
         />,
         <Button
           key="block"
           title="Mark as Blocked"
           variant="secondary"
+          loading={working}
           onPress={() =>
-            applyStatus("blocked", "This task is marked as blocked.")
+            runAction(
+              () => TaskService.updateTaskStatus(task.id, "blocked"),
+              "This task is marked as blocked.",
+            )
           }
-        />
+        />,
       );
     }
 
-    if (isAssignee && currentStatus === "blocked") {
+    if (
+      isAssignee &&
+      (currentStatus === "blocked" || currentStatus === "rejected")
+    ) {
       actions.push(
         <Button
-          key="unblock"
+          key="resume"
           title="Resume Task"
+          loading={working}
           onPress={() =>
-            applyStatus("in-progress", "This task is back in progress.")
+            runAction(
+              () => TaskService.updateTaskStatus(task.id, "in_progress"),
+              "This task is back in progress.",
+            )
           }
-        />
-      );
-    }
-
-    if (isAssignee && currentStatus === "rejected") {
-      actions.push(
-        <Button
-          key="rework"
-          title="Resume Work"
-          onPress={() =>
-            applyStatus("in-progress", "This task is back in progress.")
-          }
-        />
+        />,
       );
     }
 
@@ -183,18 +331,18 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
           onPress={() =>
             navigation.navigate("ApprovalDetails", { taskId: task.id })
           }
-        />
+        />,
       );
     }
 
-    if (isCreator || isAssignee) {
+    if (permissions?.canEdit) {
       actions.push(
         <Button
           key="edit"
           title="Edit Task"
           variant="secondary"
           onPress={() => navigation.navigate("CreateTask", { taskId: task.id })}
-        />
+        />,
       );
     }
 
@@ -211,20 +359,16 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
         title="Task Details"
         showBack
         right={
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert("More", "Share, duplicate and delete land here.")
-            }
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="More options"
-          >
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={22}
-              color={Colors.black}
-            />
-          </TouchableOpacity>
+          permissions?.canDelete ? (
+            <TouchableOpacity
+              onPress={handleDelete}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Delete task"
+            >
+              <Ionicons name="trash-outline" size={21} color={Colors.danger} />
+            </TouchableOpacity>
+          ) : undefined
         }
       />
       <WhiteContainer style={styles.container}>
@@ -246,7 +390,10 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
               activeOpacity={0.7}
             >
               <View
-                style={[styles.projectDot, { backgroundColor: project.color }]}
+                style={[
+                  styles.projectDot,
+                  { backgroundColor: getAvatarColor(project.id) },
+                ]}
               />
               <Text style={styles.projectName}>{project.name}</Text>
               <Ionicons
@@ -312,19 +459,67 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
           <View style={styles.section}>
             <SectionHeader title="People" />
             <View style={styles.peopleCard}>
+              {renderPersonRow("Assigned To", assignee?.name, assignee?.image)}
+              <View style={styles.factDivider} />
+              {renderPersonRow("Created By", creator?.name, creator?.image)}
+              <View style={styles.factDivider} />
               {renderPersonRow(
-                "Assigned To",
-                assignee?.name,
-                assignee?.jobTitle
+                namedApprovers.length > 1 ? "Approvers" : "Approver",
+                // Joining unpopulated approvers would render a bare ", ".
+                namedApprovers.map((person) => person.name).join(", ") ||
+                  undefined,
+                namedApprovers.length === 1 ? namedApprovers[0].image : undefined,
+                task.requiresApproval
+                  ? "Anyone who can approve"
+                  : "No approval needed"
               )}
-              <View style={styles.factDivider} />
-              {renderPersonRow("Created By", creator?.name, creator?.jobTitle)}
-              <View style={styles.factDivider} />
-              {renderPersonRow(
-                "Approver",
-                approver?.name,
-                approver?.jobTitle,
-                "Anyone who can approve"
+            </View>
+          </View>
+
+          {/* Attachments */}
+          <View style={styles.section}>
+            <SectionHeader
+              title={`Attachments (${task.attachments.length})`}
+              actionTitle="Add"
+              onActionPress={handleAddAttachment}
+            />
+            <View style={styles.peopleCard}>
+              {task.attachments.length > 0 ? (
+                task.attachments.map((attachment, index) => (
+                  <React.Fragment key={attachment.id}>
+                    {index > 0 ? <View style={styles.factDivider} /> : null}
+                    <View style={styles.attachmentRow}>
+                      <Ionicons
+                        name="document-attach-outline"
+                        size={18}
+                        color={Colors.lightFont}
+                      />
+                      <View style={styles.attachmentText}>
+                        <Text style={styles.attachmentName} numberOfLines={1}>
+                          {attachment.name}
+                        </Text>
+                        {attachment.uploadedByName ? (
+                          <Text style={styles.attachmentMeta}>
+                            {attachment.uploadedByName}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteAttachment(attachment)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${attachment.name}`}
+                      >
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={19}
+                          color={Colors.mutedFont}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </React.Fragment>
+                ))
+              ) : (
+                <Text style={styles.personFallback}>No files attached</Text>
               )}
             </View>
           </View>
@@ -344,7 +539,7 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
                   <CommentItem
                     key={comment.id}
                     comment={comment}
-                    isOwnComment={comment.authorId === user?.id}
+                    isOwnComment={comment.author?.id === user?.id}
                   />
                 ))}
               </View>
@@ -376,14 +571,18 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
               }
             />
             <View style={styles.activityCard}>
-              {activity.slice(0, 4).map((item, index, list) => (
-                <TimelineItem
-                  key={item.id}
-                  item={item}
-                  isLast={index === list.length - 1}
-                  showDate
-                />
-              ))}
+              {activity.length > 0 ? (
+                activity.slice(0, 4).map((item, index, list) => (
+                  <TimelineItem
+                    key={item.id}
+                    item={item}
+                    isLast={index === list.length - 1}
+                    showDate
+                  />
+                ))
+              ) : (
+                <Text style={styles.personFallback}>No activity yet</Text>
+              )}
             </View>
           </View>
 
@@ -403,6 +602,28 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 48,
+  },
+  screenLoader: {
+    flex: 1,
+  },
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  attachmentText: {
+    flex: 1,
+  },
+  attachmentName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: Colors.black,
+  },
+  attachmentMeta: {
+    fontSize: 12,
+    color: Colors.mutedFont,
+    marginTop: 2,
   },
   title: {
     fontSize: 22,

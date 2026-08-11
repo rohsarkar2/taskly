@@ -9,9 +9,11 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Colors from "../configs/Colors";
 import { ProjectModel } from "../models/project";
-import { getProjectMembers } from "../data";
-import { formatShortDate, getProjectStatusMeta } from "../utils/Formatters";
-import { AvatarStack } from "./Avatar";
+import {
+  formatShortDate,
+  getAvatarColor,
+  getProjectStatusMeta,
+} from "../utils/Formatters";
 import Badge from "./Badge";
 import ProgressBar from "./ProgressBar";
 
@@ -26,7 +28,9 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
   onPress,
   style,
 }) => {
-  const members = getProjectMembers(project.id);
+  // The API sends no project color, so tint it off the id like avatars do.
+  const color = getAvatarColor(project.id);
+  const progress = Math.round(project.taskStats.completionPercentage);
 
   return (
     <TouchableOpacity
@@ -35,38 +39,45 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
       activeOpacity={0.7}
     >
       <View style={styles.header}>
-        <View
-          style={[styles.iconBox, { backgroundColor: `${project.color}1A` }]}
-        >
-          <Ionicons name="folder-open" size={20} color={project.color} />
+        <View style={[styles.iconBox, { backgroundColor: `${color}1A` }]}>
+          <Ionicons name="folder-open" size={20} color={color} />
         </View>
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={1}>
             {project.name}
           </Text>
-          <Text style={styles.description} numberOfLines={2}>
-            {project.description}
+          <Text style={styles.description} numberOfLines={1}>
+            {project.code ? `${project.code} · ` : ""}
+            {project.memberCount} member
+            {project.memberCount === 1 ? "" : "s"}
           </Text>
         </View>
         <Badge meta={getProjectStatusMeta(project.status)} size="small" />
       </View>
 
       <View style={styles.progressRow}>
-        <Text style={styles.progressLabel}>{project.progress}% Complete</Text>
+        <Text style={styles.progressLabel}>{progress}% Complete</Text>
         <Text style={styles.taskCount}>
-          {project.taskCounts.completed}/{project.taskCounts.total} tasks
+          {project.taskStats.completed}/{project.taskStats.total} tasks
         </Text>
       </View>
-      <ProgressBar progress={project.progress} color={project.color} />
+      <ProgressBar progress={progress} color={color} />
 
       <View style={styles.footer}>
-        <AvatarStack people={members} size={26} max={4} />
         <View style={styles.dueRow}>
-          <Ionicons name="flag-outline" size={13} color={Colors.lightFont} />
+          <Ionicons name="person-outline" size={13} color={Colors.lightFont} />
           <Text style={styles.dueText}>
-            Due {formatShortDate(project.dueDate)}
+            {project.taskStats.mine} assigned to you
           </Text>
         </View>
+        {project.endDate ? (
+          <View style={styles.dueRow}>
+            <Ionicons name="flag-outline" size={13} color={Colors.lightFont} />
+            <Text style={styles.dueText}>
+              Due {formatShortDate(project.endDate)}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );

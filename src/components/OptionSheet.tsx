@@ -43,65 +43,69 @@ const OptionSheet: React.FC<OptionSheetProps> = ({
     animationType="slide"
     onRequestClose={onClose}
   >
-    <Pressable style={styles.backdrop} onPress={onClose} />
+    <View style={styles.root}>
+      {/* Fills the screen and sits behind the sheet, so the dim shows through
+          the rounded corners instead of the app screen behind the modal. */}
+      <Pressable style={styles.backdrop} onPress={onClose} />
 
-    <View style={styles.sheet}>
-      <View style={styles.grabber} />
+      <View style={styles.sheet}>
+        <View style={styles.grabber} />
 
-      <View style={styles.header}>
-        <Text style={styles.title}>{title}</Text>
-        <TouchableOpacity
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
+          <TouchableOpacity
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <Ionicons name="close" size={22} color={Colors.lightFont} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.list}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          <Ionicons name="close" size={22} color={Colors.lightFont} />
-        </TouchableOpacity>
-      </View>
+          {options.map((option) => {
+            const isSelected = option.key === selectedKey;
 
-      <ScrollView
-        style={styles.list}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        {options.map((option) => {
-          const isSelected = option.key === selectedKey;
-
-          return (
-            <TouchableOpacity
-              key={option.key}
-              style={[styles.option, isSelected && styles.optionSelected]}
-              onPress={() => onSelect(option)}
-              activeOpacity={0.7}
-            >
-              {option.icon ? (
-                <Ionicons
-                  name={option.icon}
-                  size={20}
-                  color={option.color ?? Colors.lightFont}
-                />
-              ) : null}
-
-              <View style={styles.optionText}>
-                <Text style={styles.optionLabel}>{option.label}</Text>
-                {option.description ? (
-                  <Text style={styles.optionDescription}>
-                    {option.description}
-                  </Text>
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.option, isSelected && styles.optionSelected]}
+                onPress={() => onSelect(option)}
+                activeOpacity={0.7}
+              >
+                {option.icon ? (
+                  <Ionicons
+                    name={option.icon}
+                    size={20}
+                    color={option.color ?? Colors.lightFont}
+                  />
                 ) : null}
-              </View>
 
-              {isSelected ? (
-                <Ionicons
-                  name="checkmark-circle"
-                  size={20}
-                  color={Colors.primary}
-                />
-              ) : null}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                <View style={styles.optionText}>
+                  <Text style={styles.optionLabel}>{option.label}</Text>
+                  {option.description ? (
+                    <Text style={styles.optionDescription}>
+                      {option.description}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {isSelected ? (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color={Colors.primary}
+                  />
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
     </View>
   </Modal>
 );
@@ -109,17 +113,27 @@ const OptionSheet: React.FC<OptionSheetProps> = ({
 export default OptionSheet;
 
 const styles = StyleSheet.create({
-  backdrop: {
+  root: {
     flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.35)",
   },
   sheet: {
     backgroundColor: Colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: 20,
+    // Android doesn't clip children to a rounded parent without this.
+    overflow: "hidden",
+    paddingHorizontal: 16,
     paddingBottom: 32,
-    maxHeight: Constant.WINDOW_HEIGHT * 0.7,
+    height: Constant.WINDOW_HEIGHT * 0.7,
   },
   grabber: {
     alignSelf: "center",

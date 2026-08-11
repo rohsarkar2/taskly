@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Linking,
   ScrollView,
@@ -14,6 +14,7 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   ProgressBar,
   SectionHeader,
   StatCard,
@@ -21,24 +22,93 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getProjectsForUser, getTasksAssignedTo, getUserById } from "../data";
+import { ProjectMemberModel, ProjectModel } from "../models/project";
+import { TaskModel } from "../models/task";
 import { TeamMemberDetailsScreenProps } from "../navigation/NavigationTypes";
+import ProjectService from "../services/ProjectService";
 import {
-  formatDate,
+  getAvatarColor,
   getUserRoleMeta,
-  getUserStatusMeta,
   isOverdue,
 } from "../utils/Formatters";
+import { mapApiProject, mapApiProjectMember } from "../utils/Mappers";
+import { fetchTeamTasks } from "../utils/Team";
 
 const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
   navigation,
   route,
 }) => {
   const { userId } = route.params;
-  const member = getUserById(userId);
 
-  const tasks = useMemo(() => getTasksAssignedTo(userId), [userId]);
-  const projects = useMemo(() => getProjectsForUser(userId), [userId]);
+  const [member, setMember] = useState<ProjectMemberModel | null>(null);
+  const [projects, setProjects] = useState<ProjectModel[]>([]);
+  const [tasks, setTasks] = useState<TaskModel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // There is no per-user endpoint, so the person and the projects they share
+  // with you are pulled out of the project member lists.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await ProjectService.projectList();
+        const allProjects = (response?.data?.projects ?? []).map(mapApiProject);
+
+        const rosters = await Promise.all(
+          allProjects.map(async (project: ProjectModel) => {
+            const members = await ProjectService.getProjectMembers(
+              project.id,
+            ).catch(() => null);
+
+            return {
+              project,
+              members: (members?.data?.members ?? []).map(mapApiProjectMember),
+            };
+          }),
+        );
+
+        if (!active) return;
+
+        const shared = rosters.filter((entry) =>
+          entry.members.some((person: ProjectMemberModel) => person.id === userId),
+        );
+
+        setMember(
+          shared[0]?.members.find(
+            (person: ProjectMemberModel) => person.id === userId,
+          ) ?? null,
+        );
+        setProjects(shared.map((entry) => entry.project));
+        setTasks(
+          (await fetchTeamTasks().catch(() => [])).filter(
+            (task) => task.assignee?.id === userId,
+          ),
+        );
+      } catch {
+        // The empty state covers it.
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Team Member" showBack />
+        <WhiteContainer>
+          <Loader style={styles.screenLoader} size="large" />
+        </WhiteContainer>
+      </Container>
+    );
+  }
 
   if (!member) {
     return (
@@ -72,12 +142,11 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
         >
           {/* Identity */}
           <View style={styles.identity}>
-            <Avatar name={member.name} image={member.image} size={76} />
+            <Avatar name={member.name} image={member.avatar} size={76} />
             <Text style={styles.name}>{member.name}</Text>
-            <Text style={styles.jobTitle}>{member.jobTitle}</Text>
+            <Text style={styles.jobTitle}>{member.designation}</Text>
             <View style={styles.badges}>
               <Badge meta={getUserRoleMeta(member.role)} size="small" />
-              <Badge meta={getUserStatusMeta(member.status)} size="small" />
             </View>
           </View>
 
@@ -91,25 +160,7 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
               <Ionicons name="mail-outline" size={17} color={Colors.primary} />
               <Text style={styles.contactText}>Email</Text>
             </TouchableOpacity>
-            {member.phoneNumber ? (
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => Linking.openURL(`tel:${member.phoneNumber}`)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="call-outline"
-                  size={17}
-                  color={Colors.primary}
-                />
-                <Text style={styles.contactText}>Call</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
-
-          <Text style={styles.joined}>
-            Joined {formatDate(member.joinedAt)}
-          </Text>
 
           {/* Workload */}
           <SectionHeader title="Workload" style={styles.sectionHeader} />
@@ -160,7 +211,7 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
                   <View
                     style={[
                       styles.projectDot,
-                      { backgroundColor: project.color },
+                      { backgroundColor: getAvatarColor(project.id) },
                     ]}
                   />
                   <Text style={styles.projectName} numberOfLines={1}>
@@ -206,6 +257,9 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
 export default TeamMemberDetails;
 
 const styles = StyleSheet.create({
+  screenLoader: {
+    flex: 1,
+  },
   container: {
     paddingTop: 12,
     paddingHorizontal: 16,

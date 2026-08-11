@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import {
   Container,
   EmptyState,
   Header,
+  Loader,
   ProjectCard,
   SearchBar,
   SegmentedTabs,
@@ -11,63 +12,72 @@ import {
 } from "../components";
 import type { TabItem } from "../components";
 import Colors from "../configs/Colors";
-import { getProjectsForUser } from "../data";
 import { ProjectModel } from "../models/project";
 import { ProjectsScreenProps } from "../navigation/NavigationTypes";
-import { useAppSelector } from "../store/hooks";
+import ProjectService from "../services/ProjectService";
+import { mapApiProject } from "../utils/Mappers";
 
 type ProjectTab = "all" | "active" | "on-hold" | "completed";
 
+/** The tab keys are the app's; the API wants its own spelling. */
+const API_PROJECT_STATUS: Record<Exclude<ProjectTab, "all">, string> = {
+  active: "active",
+  "on-hold": "on_hold",
+  completed: "completed",
+};
+
 const Projects: React.FC<ProjectsScreenProps> = ({ navigation }) => {
-  const user = useAppSelector((state) => state.user.userData);
   const [activeTab, setActiveTab] = useState<ProjectTab>("all");
   const [query, setQuery] = useState("");
+  const [projects, setProjects] = useState<ProjectModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Only projects the user is a member of ever reach the app.
-  const myProjects = useMemo(
-    () => (user ? getProjectsForUser(user.id) : []),
-    [user]
-  );
+  // Only projects the user is a member of ever reach the app — the API scopes
+  // the list, so filtering and search run server side too.
+  const loadProjects = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await ProjectService.projectList({
+        search: query.trim() || undefined,
+        status: activeTab === "all" ? undefined : API_PROJECT_STATUS[activeTab],
+      });
+      setProjects((response?.data?.projects ?? []).map(mapApiProject));
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load your projects.");
+      setProjects([]);
+    }
+  }, [activeTab, query]);
+
+  useEffect(() => {
+    let active = true;
+
+    // Debounced so typing in the search bar doesn't fire a call per keystroke.
+    const timer = setTimeout(async () => {
+      await loadProjects();
+      if (active) {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [loadProjects]);
 
   const tabs: TabItem<ProjectTab>[] = [
-    { key: "all", label: "All", count: myProjects.length },
-    {
-      key: "active",
-      label: "Active",
-      count: myProjects.filter((project) => project.status === "active").length,
-    },
-    {
-      key: "on-hold",
-      label: "On Hold",
-      count: myProjects.filter((project) => project.status === "on-hold")
-        .length,
-    },
-    {
-      key: "completed",
-      label: "Done",
-      count: myProjects.filter((project) => project.status === "completed")
-        .length,
-    },
+    { key: "all", label: "All" },
+    { key: "active", label: "Active" },
+    { key: "on-hold", label: "On Hold" },
+    { key: "completed", label: "Done" },
   ];
 
-  const visibleProjects = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return myProjects.filter((project) => {
-      const matchesTab = activeTab === "all" || project.status === activeTab;
-      const matchesQuery =
-        !normalizedQuery ||
-        project.name.toLowerCase().includes(normalizedQuery) ||
-        project.description.toLowerCase().includes(normalizedQuery);
-
-      return matchesTab && matchesQuery;
-    });
-  }, [myProjects, activeTab, query]);
-
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 700);
+    await loadProjects();
+    setRefreshing(false);
   };
 
   const gotoProjectDetails = (project: ProjectModel) =>
@@ -93,26 +103,37 @@ const Projects: React.FC<ProjectsScreenProps> = ({ navigation }) => {
         />
 
         <FlatList
-          data={visibleProjects}
+          data={projects}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <ProjectCard project={item} onPress={gotoProjectDetails} />
           )}
           contentContainerStyle={[
             styles.list,
-            visibleProjects.length === 0 && styles.listEmpty,
+            projects.length === 0 && styles.listEmpty,
           ]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <EmptyState
-              icon="folder-open-outline"
-              title={query ? "No matching projects" : "No projects yet"}
-              subtitle={
-                query
-                  ? "Try a different search term."
-                  : "Projects you're added to will show up here."
-              }
-            />
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "folder-open-outline"}
+                title={
+                  error
+                    ? "Couldn't load projects"
+                    : query
+                    ? "No matching projects"
+                    : "No projects yet"
+                }
+                subtitle={
+                  error ??
+                  (query
+                    ? "Try a different search term."
+                    : "Projects you're added to will show up here.")
+                }
+              />
+            )
           }
           refreshControl={
             <RefreshControl

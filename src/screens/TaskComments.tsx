@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -19,51 +19,131 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getCommentsByTaskId, getTaskById } from "../data";
-import { CommentModel } from "../models/task";
+import {
+  CommentModel,
+  MentionableUserModel,
+  TaskModel,
+} from "../models/task";
 import { TaskCommentsScreenProps } from "../navigation/NavigationTypes";
+import CommentService from "../services/CommentService";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
+import {
+  mapApiComment,
+  mapApiMentionableUser,
+  mapApiTask,
+} from "../utils/Mappers";
 
 const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
   const { taskId } = route.params;
   const user = useAppSelector((state) => state.user.userData);
 
-  const task = getTaskById(taskId);
-  const [comments, setComments] = useState<CommentModel[]>(() =>
-    getCommentsByTaskId(taskId)
-  );
+  const [task, setTask] = useState<TaskModel | null>(null);
+  const [comments, setComments] = useState<CommentModel[]>([]);
+  const [mentionable, setMentionable] = useState<MentionableUserModel[]>([]);
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<CommentModel | null>(null);
+  const [editing, setEditing] = useState<CommentModel | null>(null);
+  const [sending, setSending] = useState(false);
 
-  // Replies sit directly under their parent.
-  const ordered = useMemo(() => {
-    const roots = comments.filter((comment) => !comment.parentId);
+  const loadComments = useCallback(async () => {
+    try {
+      const response = await CommentService.commentList(taskId);
+      setComments((response?.data?.comments ?? []).map(mapApiComment));
+    } catch {
+      // The empty state covers a failed load.
+    }
+  }, [taskId]);
 
-    return roots.flatMap((root) => [
-      root,
-      ...comments.filter((comment) => comment.parentId === root.id),
-    ]);
-  }, [comments]);
+  useEffect(() => {
+    let active = true;
 
-  const handleSend = () => {
-    if (!draft.trim() || !user) {
+    (async () => {
+      await loadComments();
+
+      // The header title and the @-mention roster are independent of the feed.
+      try {
+        const [taskResponse, mentionResponse] = await Promise.all([
+          TaskService.getTaskDetails(taskId),
+          CommentService.getMentionableUsers(taskId),
+        ]);
+        if (!active) return;
+
+        setTask(mapApiTask(taskResponse?.data?.task));
+        setMentionable(
+          (mentionResponse?.data?.users ?? []).map(mapApiMentionableUser),
+        );
+      } catch {
+        // Mentions degrade to plain text; the API still resolves @names.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [taskId, loadComments]);
+
+  // The API nests replies inside their parent; the list is flat, so they are
+  // spliced in directly under it.
+  const ordered = useMemo(
+    () => comments.flatMap((root) => [root, ...root.replies]),
+    [comments]
+  );
+
+  // Only offer the picker while an @token is being typed.
+  const mentionQuery = useMemo(() => {
+    const match = draft.match(/@([\w.@-]*)$/);
+    return match ? match[1].toLowerCase() : null;
+  }, [draft]);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) {
+      return [];
+    }
+
+    return mentionable
+      .filter(
+        (person) =>
+          !mentionQuery ||
+          person.name.toLowerCase().includes(mentionQuery) ||
+          person.email.toLowerCase().includes(mentionQuery)
+      )
+      .slice(0, 4);
+  }, [mentionable, mentionQuery]);
+
+  const applyMention = (person: MentionableUserModel) =>
+    // The API matches `@name` against the project's members server side.
+    setDraft((previous) =>
+      previous.replace(/@([\w.@-]*)$/, `@${person.name} `)
+    );
+
+  const handleSend = async () => {
+    const content = draft.trim();
+    if (!content || !user || sending) {
       return;
     }
 
-    const newComment: CommentModel = {
-      id: `c-local-${comments.length + 1}`,
-      taskId,
-      authorId: user.id,
-      body: draft.trim(),
-      createdAt: new Date().toISOString(),
-      parentId: replyingTo?.id ?? null,
-      mentionIds: [],
-      edited: false,
-    };
+    setSending(true);
 
-    setComments((previous) => [...previous, newComment]);
-    setDraft("");
-    setReplyingTo(null);
+    try {
+      if (editing) {
+        await CommentService.updateComment(editing.id, content);
+      } else {
+        await CommentService.addComment(taskId, content, replyingTo?.id);
+      }
+
+      setDraft("");
+      setReplyingTo(null);
+      setEditing(null);
+      await loadComments();
+    } catch (error: any) {
+      Alert.alert(
+        editing ? "Couldn't save" : "Couldn't post",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleDelete = (comment: CommentModel) => {
@@ -72,22 +152,31 @@ const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () =>
-          setComments((previous) =>
-            previous.filter(
-              (item) => item.id !== comment.id && item.parentId !== comment.id
-            )
-          ),
+        onPress: async () => {
+          try {
+            await CommentService.deleteComment(comment.id);
+          } catch (error: any) {
+            Alert.alert(
+              "Couldn't delete",
+              error?.message ?? "Something went wrong. Please try again.",
+            );
+          }
+          await loadComments();
+        },
       },
     ]);
   };
 
   const handleEdit = (comment: CommentModel) => {
-    setDraft(comment.body);
-    setComments((previous) =>
-      previous.filter((item) => item.id !== comment.id)
-    );
+    setEditing(comment);
+    setDraft(comment.content);
     setReplyingTo(null);
+  };
+
+  const cancelComposerMode = () => {
+    setReplyingTo(null);
+    setEditing(null);
+    setDraft("");
   };
 
   return (
@@ -111,7 +200,7 @@ const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
             renderItem={({ item }) => (
               <CommentItem
                 comment={item}
-                isOwnComment={item.authorId === user?.id}
+                isOwnComment={item.author?.id === user?.id}
                 onReplyPress={item.parentId ? undefined : setReplyingTo}
                 onEditPress={handleEdit}
                 onDeletePress={handleDelete}
@@ -131,20 +220,43 @@ const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
             }
           />
 
-          {replyingTo ? (
+          {mentionMatches.length > 0 ? (
+            <View style={styles.mentionBar}>
+              {mentionMatches.map((person) => (
+                <TouchableOpacity
+                  key={person.id}
+                  style={styles.mentionChip}
+                  onPress={() => applyMention(person)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.mentionChipText} numberOfLines={1}>
+                    {person.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+
+          {replyingTo || editing ? (
             <View style={styles.replyBanner}>
               <Ionicons
-                name="return-down-forward-outline"
+                name={
+                  editing
+                    ? "create-outline"
+                    : "return-down-forward-outline"
+                }
                 size={15}
                 color={Colors.primary}
               />
               <Text style={styles.replyText} numberOfLines={1}>
-                Replying to {replyingTo.body}
+                {editing
+                  ? "Editing your comment"
+                  : `Replying to ${replyingTo?.content}`}
               </Text>
               <TouchableOpacity
-                onPress={() => setReplyingTo(null)}
+                onPress={cancelComposerMode}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel reply"
+                accessibilityLabel={editing ? "Cancel edit" : "Cancel reply"}
               >
                 <Ionicons name="close" size={16} color={Colors.lightFont} />
               </TouchableOpacity>
@@ -163,10 +275,10 @@ const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
             <TouchableOpacity
               style={[
                 styles.sendButton,
-                !draft.trim() && styles.sendButtonDisabled,
+                (!draft.trim() || sending) && styles.sendButtonDisabled,
               ]}
               onPress={handleSend}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || sending}
               activeOpacity={0.8}
               accessibilityRole="button"
               accessibilityLabel="Send comment"
@@ -197,6 +309,24 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.leaderboardBorderVeryLight,
+  },
+  mentionBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingBottom: 10,
+  },
+  mentionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: Colors.secondary,
+  },
+  mentionChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.primary,
+    maxWidth: 140,
   },
   list: {
     paddingBottom: 16,

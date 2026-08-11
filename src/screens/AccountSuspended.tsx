@@ -3,23 +3,35 @@ import { Linking, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Button, Container, Header, WhiteContainer } from "../components";
 import Colors from "../configs/Colors";
-import { organization } from "../data";
 import { AccountSuspendedScreenProps } from "../navigation/NavigationTypes";
-import { useAppDispatch } from "../store/hooks";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { clearOrganizationData } from "../store/slices/organizationSlice";
 import { clearUserData } from "../store/slices/userSlice";
+import { endSession } from "../utils/Session";
 
 const AccountSuspended: React.FC<AccountSuspendedScreenProps> = ({
   navigation,
 }) => {
   const dispatch = useAppDispatch();
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
+  );
+  const user = useAppSelector((state) => state.user.userData);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await endSession();
     dispatch(clearUserData());
+    dispatch(clearOrganizationData());
     navigation.reset({ index: 0, routes: [{ name: "Welcome" }] });
   };
 
+  // A suspended account can't read /organization, so there is no admin contact
+  // to link to — fall back to the org's own support alias.
   const handleContactAdmin = () => {
-    Linking.openURL(`mailto:${organization.adminEmail}`).catch(() => {});
+    const domain = user?.email?.split("@")[1];
+    Linking.openURL(`mailto:${domain ? `admin@${domain}` : ""}`).catch(
+      () => {},
+    );
   };
 
   return (
@@ -33,14 +45,14 @@ const AccountSuspended: React.FC<AccountSuspendedScreenProps> = ({
 
           <Text style={styles.title}>Your account is suspended</Text>
           <Text style={styles.subtitle}>
-            Access to {organization.name} has been paused by an administrator.
-            Reach out to them to have it restored.
+            Access to {organization?.name ?? "your organization"} has been
+            paused by an administrator. Reach out to them to have it restored.
           </Text>
 
           <View style={styles.adminCard}>
-            <Text style={styles.adminLabel}>Organization Admin</Text>
-            <Text style={styles.adminName}>{organization.adminName}</Text>
-            <Text style={styles.adminEmail}>{organization.adminEmail}</Text>
+            <Text style={styles.adminLabel}>Signed in as</Text>
+            <Text style={styles.adminName}>{user?.name ?? "—"}</Text>
+            <Text style={styles.adminEmail}>{user?.email ?? "—"}</Text>
           </View>
 
           <Button

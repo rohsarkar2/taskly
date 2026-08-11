@@ -1,24 +1,70 @@
+import { TaskPriority } from "./task";
+import { UserRole } from "./user";
+
 export type ProjectStatus = "active" | "on-hold" | "completed";
 
-export type ProjectTaskCounts = {
+/** Your standing on a single project, independent of your organization role. */
+export type ProjectRole = "manager" | "team-lead" | "member";
+
+/**
+ * The trimmed person object the project endpoints populate. `name` is empty
+ * and `role` is null when the API sent a bare id instead of a populated object.
+ */
+export type ProjectPersonModel = {
+  id: string;
+  name: string;
+  role: UserRole | null;
+};
+
+export type ProjectTaskStats = {
   total: number;
-  toDo: number;
-  inProgress: number;
-  pendingApproval: number;
   completed: number;
+  /** Tasks on this project assigned to you. */
+  mine: number;
+  completionPercentage: number; // 0 - 100
 };
 
 export type ProjectModel = {
   id: string;
   name: string;
-  description: string;
+  code: string;
   status: ProjectStatus;
-  progress: number; // 0 - 100
-  color: string;
-  dueDate: string; // ISO string format
-  createdAt: string; // ISO string format
-  memberIds: string[];
-  taskCounts: ProjectTaskCounts;
-  /** Roles allowed to approve tasks in this project. Backend-driven later. */
-  approverRoles: ("team-lead" | "manager")[];
+  priority: TaskPriority;
+  startDate: string; // ISO string format
+  endDate: string; // ISO string format
+  projectRole: ProjectRole;
+  memberCount: number;
+  taskStats: ProjectTaskStats;
+};
+
+/**
+ * The effective workflow `GET /projects/:id` resolves — project overrides
+ * layered on the organization defaults. Drives which controls the app shows.
+ */
+export type ProjectWorkflowModel = {
+  requireTaskApproval: boolean;
+  approverRole: UserRole | null;
+  approvers: ProjectPersonModel[];
+  defaultPriority: TaskPriority;
+  allowMemberTaskCreation: boolean;
+  allowMemberTaskDeletion: boolean;
+};
+
+export type ProjectDetailsModel = {
+  project: ProjectModel & {
+    managers: ProjectPersonModel[];
+    teamLeads: ProjectPersonModel[];
+  };
+  workflow: ProjectWorkflowModel;
+  taskStats: ProjectTaskStats & { byStatus: Record<string, number> };
+};
+
+export type ProjectMemberModel = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatar: string;
+  designation: string;
+  projectRole: ProjectRole;
 };

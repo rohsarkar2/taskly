@@ -21,11 +21,13 @@ const CATEGORY_ICONS: Record<
 type NotificationItemProps = {
   notification: NotificationModel;
   onPress?: (notification: NotificationModel) => void;
+  onLongPress?: (notification: NotificationModel) => void;
 };
 
 const NotificationItem: React.FC<NotificationItemProps> = ({
   notification,
   onPress,
+  onLongPress,
 }) => {
   const meta = CATEGORY_ICONS[notification.category];
 
@@ -33,6 +35,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
     <TouchableOpacity
       style={[styles.row, !notification.read && styles.rowUnread]}
       onPress={() => onPress?.(notification)}
+      onLongPress={onLongPress ? () => onLongPress(notification) : undefined}
       activeOpacity={0.7}
     >
       <View style={[styles.iconBox, { backgroundColor: `${meta.color}1A` }]}>

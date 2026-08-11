@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -28,18 +28,28 @@ import {
 import type { SheetOption } from "../components";
 import Colors from "../configs/Colors";
 import {
-  getProjectById,
-  getProjectMembers,
-  getProjectsForUser,
-  getTaskById,
-  getUserById,
-} from "../data";
+  ProjectMemberModel,
+  ProjectModel,
+  ProjectWorkflowModel,
+} from "../models/project";
 import { TaskPriority } from "../models/task";
 import { CreateTaskScreenProps } from "../navigation/NavigationTypes";
+import ProjectService from "../services/ProjectService";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
-import { formatDate, getTaskPriorityMeta } from "../utils/Formatters";
+import {
+  formatDate,
+  getAvatarColor,
+  getTaskPriorityMeta,
+} from "../utils/Formatters";
+import {
+  mapApiProject,
+  mapApiProjectMember,
+  mapApiTask,
+  mapApiWorkflow,
+} from "../utils/Mappers";
 
-type SheetKind = "project" | "priority" | "assignee" | "approver" | null;
+type SheetKind = "project" | "priority" | "assignee" | null;
 
 const PRIORITY_OPTIONS: SheetOption[] = (
   ["low", "medium", "high", "urgent"] as TaskPriority[]
@@ -54,81 +64,145 @@ const PRIORITY_OPTIONS: SheetOption[] = (
 });
 
 const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
-  const editingTask = getTaskById(route.params?.taskId);
-  const isEditing = Boolean(editingTask);
+  const editingTaskId = route.params?.taskId;
+  const isEditing = Boolean(editingTaskId);
 
   const user = useAppSelector((state) => state.user.userData);
   const richText = useRef<RichEditor>(null);
 
-  const myProjects = user ? getProjectsForUser(user.id) : [];
+  const [myProjects, setMyProjects] = useState<ProjectModel[]>([]);
+  const [members, setMembers] = useState<ProjectMemberModel[]>([]);
+  const [workflow, setWorkflow] = useState<ProjectWorkflowModel | null>(null);
 
-  const [title, setTitle] = useState(editingTask?.title ?? "");
-  const [description, setDescription] = useState(
-    editingTask?.description ?? ""
-  );
-  const [projectId, setProjectId] = useState(
-    editingTask?.projectId ?? route.params?.projectId ?? myProjects[0]?.id ?? ""
-  );
-  const [priority, setPriority] = useState<TaskPriority>(
-    editingTask?.priority ?? "medium"
-  );
-  const [dueDate, setDueDate] = useState<Date>(
-    editingTask ? new Date(editingTask.dueDate) : new Date()
-  );
-  const [assigneeId, setAssigneeId] = useState(
-    editingTask?.assigneeId ?? user?.id ?? ""
-  );
-  const [approverId, setApproverId] = useState<string | null>(
-    editingTask?.approverId ?? null
-  );
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState(route.params?.projectId ?? "");
+  const [priority, setPriority] = useState<TaskPriority>("medium");
+  const [dueDate, setDueDate] = useState<Date>(new Date());
+  const [assigneeId, setAssigneeId] = useState(user?.id ?? "");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [openSheet, setOpenSheet] = useState<SheetKind>(null);
   const [loading, setLoading] = useState(false);
 
-  const project = getProjectById(projectId);
-  const members = projectId ? getProjectMembers(projectId) : [];
-  const assignee = getUserById(assigneeId);
-  const approver = getUserById(approverId);
+  // Projects you belong to back the picker; the API already scopes the list.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await ProjectService.projectList({ status: "active" });
+        if (!active) return;
+
+        const projects = (response?.data?.projects ?? []).map(mapApiProject);
+        setMyProjects(projects);
+        setProjectId((current) => current || projects[0]?.id || "");
+      } catch {
+        // The picker stays empty and submit blocks on the missing project.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Editing pulls the current values rather than trusting the list payload.
+  useEffect(() => {
+    if (!editingTaskId) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await TaskService.getTaskDetails(editingTaskId);
+        if (!active) return;
+
+        const task = mapApiTask(response?.data?.task);
+        setTitle(task.title);
+        setDescription(task.description);
+        setProjectId(task.projectId);
+        setPriority(task.priority);
+        setAssigneeId(task.assignee?.id ?? "");
+        if (task.dueDate) {
+          setDueDate(new Date(task.dueDate));
+        }
+        richText.current?.setContentHTML(task.description);
+      } catch (caught: any) {
+        Alert.alert(
+          "Couldn't load task",
+          caught?.message ?? "Something went wrong. Please try again.",
+        );
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [editingTaskId]);
+
+  // The members list and the effective workflow both hang off the project.
+  useEffect(() => {
+    if (!projectId) {
+      setMembers([]);
+      setWorkflow(null);
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      try {
+        const [membersResponse, detailsResponse] = await Promise.all([
+          ProjectService.getProjectMembers(projectId),
+          ProjectService.getProjectDetails(projectId),
+        ]);
+        if (!active) return;
+
+        setMembers(
+          (membersResponse?.data?.members ?? []).map(mapApiProjectMember),
+        );
+        setWorkflow(mapApiWorkflow(detailsResponse?.data?.workflow));
+      } catch {
+        if (active) {
+          setMembers([]);
+          setWorkflow(null);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const project = myProjects.find((item) => item.id === projectId);
+  const assignee = members.find((member) => member.id === assigneeId);
+
+  // A plain member may only assign work to themselves.
+  const canAssignOthers =
+    project?.projectRole === "manager" || project?.projectRole === "team-lead";
 
   const projectOptions: SheetOption[] = myProjects.map((item) => ({
     key: item.id,
     label: item.name,
     icon: "ellipse",
-    color: item.color,
+    color: getAvatarColor(item.id),
   }));
 
-  const assigneeOptions: SheetOption[] = members.map((member) => ({
+  const assigneeOptions: SheetOption[] = (
+    canAssignOthers
+      ? members
+      : members.filter((member) => member.id === user?.id)
+  ).map((member) => ({
     key: member.id,
     label: member.name,
-    description: member.jobTitle,
+    description: member.designation,
     icon: "person-outline",
   }));
 
-  // Only roles the project workflow allows can be picked as a named approver.
-  const approverOptions: SheetOption[] = [
-    {
-      key: "any",
-      label: "Anyone who can approve",
-      description: "The project workflow decides who reviews this task",
-      icon: "people-outline",
-    },
-    ...members
-      .filter(
-        (member) =>
-          member.role !== "team-member" &&
-          project?.approverRoles.includes(
-            member.role as "team-lead" | "manager"
-          )
-      )
-      .map((member) => ({
-        key: member.id,
-        label: member.name,
-        description: member.role === "team-lead" ? "Team Lead" : "Manager",
-        icon: "shield-checkmark-outline",
-      })),
-  ];
-
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!title.trim()) {
       Alert.alert("Missing title", "Give the task a short, clear title.");
       return;
@@ -144,8 +218,26 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
 
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      if (isEditing && editingTaskId) {
+        // Status isn't editable here — it moves through the status endpoints.
+        await TaskService.updateTask(editingTaskId, {
+          title: title.trim(),
+          description,
+          priority,
+          dueDate: dueDate.toISOString().split("T")[0],
+        });
+      } else {
+        await TaskService.createTask({
+          title: title.trim(),
+          description,
+          projectId,
+          assignee: assigneeId || undefined,
+          priority,
+          dueDate: dueDate.toISOString().split("T")[0],
+        });
+      }
+
       Alert.alert(
         isEditing ? "Task updated" : "Task created",
         isEditing
@@ -153,7 +245,14 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
           : "The task has been added to the project.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
-    }, 700);
+    } catch (error: any) {
+      Alert.alert(
+        isEditing ? "Couldn't save" : "Couldn't create task",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderPicker = (
@@ -201,7 +300,10 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
               () => setOpenSheet("project"),
               project ? (
                 <View
-                  style={[styles.dot, { backgroundColor: project.color }]}
+                  style={[
+                    styles.dot,
+                    { backgroundColor: getAvatarColor(project.id) },
+                  ]}
                 />
               ) : undefined
             )}
@@ -263,21 +365,23 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
               () => setShowDatePicker(true)
             )}
 
-            {renderPicker(
-              "Assign To",
-              assignee?.name ?? "Select a team member",
-              "person-outline",
-              () => setOpenSheet("assignee"),
-              assignee ? <Avatar name={assignee.name} size={24} /> : undefined
-            )}
-
-            {renderPicker(
-              "Approver",
-              approver?.name ?? "Anyone who can approve",
-              "shield-checkmark-outline",
-              () => setOpenSheet("approver"),
-              approver ? <Avatar name={approver.name} size={24} /> : undefined
-            )}
+            {/* Editing can't move the task between people — only the API's
+                assignment endpoints do that. */}
+            {isEditing
+              ? null
+              : renderPicker(
+                  "Assign To",
+                  assignee?.name ?? "Select a team member",
+                  "person-outline",
+                  () => setOpenSheet("assignee"),
+                  assignee ? (
+                    <Avatar
+                      name={assignee.name}
+                      image={assignee.avatar}
+                      size={24}
+                    />
+                  ) : undefined
+                )}
 
             <View style={styles.notice}>
               <Ionicons
@@ -286,8 +390,16 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
                 color={Colors.primary}
               />
               <Text style={styles.noticeText}>
-                Leaving the approver open lets any eligible approver on{" "}
-                {project?.name ?? "the project"} review this task.
+                {workflow?.requireTaskApproval
+                  ? `Completing this task will need approval on ${
+                      project?.name ?? "the project"
+                    }.`
+                  : `Tasks on ${
+                      project?.name ?? "this project"
+                    } complete without review.`}
+                {canAssignOthers
+                  ? ""
+                  : " As a project member you can only assign work to yourself."}
               </Text>
             </View>
 
@@ -319,7 +431,6 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
         selectedKey={projectId}
         onSelect={(option) => {
           setProjectId(option.key);
-          setApproverId(null);
           setOpenSheet(null);
         }}
         onClose={() => setOpenSheet(null)}
@@ -344,18 +455,6 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
         selectedKey={assigneeId}
         onSelect={(option) => {
           setAssigneeId(option.key);
-          setOpenSheet(null);
-        }}
-        onClose={() => setOpenSheet(null)}
-      />
-
-      <OptionSheet
-        visible={openSheet === "approver"}
-        title="Select approver"
-        options={approverOptions}
-        selectedKey={approverId ?? "any"}
-        onSelect={(option) => {
-          setApproverId(option.key === "any" ? null : option.key);
           setOpenSheet(null);
         }}
         onClose={() => setOpenSheet(null)}

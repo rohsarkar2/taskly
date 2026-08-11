@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -9,26 +9,80 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
-  Avatar,
   Container,
   Header,
+  Loader,
   SectionHeader,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { organization, projects, users } from "../data";
 import { OrganizationInfoScreenProps } from "../navigation/NavigationTypes";
-import { formatDate } from "../utils/Formatters";
+import ProfileService from "../services/ProfileService";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { setOrganizationData } from "../store/slices/organizationSlice";
+import { mapApiOrganization } from "../utils/Mappers";
 
 const OrganizationInfo: React.FC<OrganizationInfoScreenProps> = () => {
-  const activeProjects = projects.filter(
-    (project) => project.status === "active"
+  const dispatch = useAppDispatch();
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
   );
 
-  // Copy to clipboard needs @react-native-clipboard/clipboard — added with the
-  // API work; for now just surface the ID so it can be read out.
+  // The persisted copy from sign in only carries the identity fields, so the
+  // detail block stays blank until this call lands.
+  const [loading, setLoading] = useState(!organization?.employeeCount);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await ProfileService.getOrganization();
+        if (active && response?.data?.organization) {
+          dispatch(
+            setOrganizationData(
+              mapApiOrganization(response.data.organization),
+            ),
+          );
+        }
+      } catch (caught: any) {
+        if (active) {
+          setError(caught?.message ?? "Couldn't load your organization.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [dispatch]);
+
+  // Copy to clipboard needs @react-native-clipboard/clipboard; for now just
+  // surface the ID so it can be read out.
   const handleCopyId = () =>
-    Alert.alert("Organization ID", organization.uniqueOrganizationId);
+    Alert.alert("Organization ID", organization?.uniqueOrganizationId ?? "—");
+
+  const details = [
+    { label: "Industry", value: organization?.industry },
+    { label: "Website", value: organization?.website },
+    { label: "Timezone", value: organization?.timezone },
+  ].filter((detail) => Boolean(detail.value));
+
+  if (loading && !organization) {
+    return (
+      <Container>
+        <Header title="Organization" showBack />
+        <WhiteContainer style={styles.container}>
+          <Loader style={styles.screenLoader} size="large" />
+        </WhiteContainer>
+      </Container>
+    );
+  }
 
   return (
     <Container>
@@ -38,15 +92,14 @@ const OrganizationInfo: React.FC<OrganizationInfoScreenProps> = () => {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
           {/* Identity */}
           <View style={styles.identity}>
             <View style={styles.logo}>
               <Ionicons name="business" size={30} color={Colors.primary} />
             </View>
-            <Text style={styles.name}>{organization.name}</Text>
-            <Text style={styles.since}>
-              On Taskly since {formatDate(organization.createdAt)}
-            </Text>
+            <Text style={styles.name}>{organization?.name ?? "—"}</Text>
           </View>
 
           {/* Organization ID */}
@@ -58,7 +111,7 @@ const OrganizationInfo: React.FC<OrganizationInfoScreenProps> = () => {
             <View style={styles.idText}>
               <Text style={styles.idLabel}>Organization ID</Text>
               <Text style={styles.idValue}>
-                {organization.uniqueOrganizationId}
+                {organization?.uniqueOrganizationId ?? "—"}
               </Text>
             </View>
             <Ionicons name="copy-outline" size={20} color={Colors.primary} />
@@ -67,9 +120,11 @@ const OrganizationInfo: React.FC<OrganizationInfoScreenProps> = () => {
           {/* Stats */}
           <View style={styles.statsRow}>
             {[
-              { label: "Members", value: organization.memberCount },
-              { label: "Active Projects", value: activeProjects.length },
-              { label: "Team Size", value: organization.size.split(" ")[0] },
+              { label: "Members", value: organization?.employeeCount ?? 0 },
+              {
+                label: "Working Days",
+                value: organization?.workingDays?.length ?? 0,
+              },
             ].map((stat, index) => (
               <React.Fragment key={stat.label}>
                 {index > 0 ? <View style={styles.statDivider} /> : null}
@@ -81,36 +136,25 @@ const OrganizationInfo: React.FC<OrganizationInfoScreenProps> = () => {
             ))}
           </View>
 
-          {/* Admin */}
-          <SectionHeader title="Administrator" style={styles.sectionHeader} />
-          <View style={styles.card}>
-            <View style={styles.adminRow}>
-              <Avatar name={organization.adminName} size={44} />
-              <View style={styles.adminText}>
-                <Text style={styles.adminName}>{organization.adminName}</Text>
-                <Text style={styles.adminEmail}>{organization.adminEmail}</Text>
+          {/* Details */}
+          {details.length > 0 ? (
+            <>
+              <SectionHeader title="Details" style={styles.sectionHeader} />
+              <View style={styles.card}>
+                {details.map((detail, index) => (
+                  <React.Fragment key={detail.label}>
+                    {index > 0 ? <View style={styles.detailDivider} /> : null}
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>{detail.label}</Text>
+                      <Text style={styles.detailValue} numberOfLines={1}>
+                        {detail.value}
+                      </Text>
+                    </View>
+                  </React.Fragment>
+                ))}
               </View>
-            </View>
-          </View>
-
-          {/* Leadership */}
-          <SectionHeader title="Leadership" style={styles.sectionHeader} />
-          <View style={styles.card}>
-            {users
-              .filter((member) => member.role !== "team-member")
-              .map((member, index) => (
-                <View
-                  key={member.id}
-                  style={[styles.leaderRow, index > 0 && styles.leaderRowGap]}
-                >
-                  <Avatar name={member.name} size={36} />
-                  <View style={styles.leaderText}>
-                    <Text style={styles.leaderName}>{member.name}</Text>
-                    <Text style={styles.leaderRole}>{member.jobTitle}</Text>
-                  </View>
-                </View>
-              ))}
-          </View>
+            </>
+          ) : null}
 
           <View style={styles.notice}>
             <Ionicons
@@ -137,6 +181,18 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 40,
+  },
+  screenLoader: {
+    flex: 1,
+  },
+  error: {
+    fontSize: 13,
+    color: Colors.danger,
+    backgroundColor: Colors.dangerSoft,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
   },
   identity: {
     alignItems: "center",
@@ -228,44 +284,27 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderGray,
     padding: 14,
   },
-  adminRow: {
+  detailRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
     gap: 12,
   },
-  adminText: {
-    flex: 1,
-  },
-  adminName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Colors.black,
-  },
-  adminEmail: {
+  detailLabel: {
     fontSize: 13,
     color: Colors.mutedFont,
-    marginTop: 2,
   },
-  leaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  leaderRowGap: {
-    marginTop: 16,
-  },
-  leaderText: {
+  detailValue: {
     flex: 1,
-  },
-  leaderName: {
     fontSize: 14,
-    fontWeight: "600",
-    color: Colors.black,
+    fontWeight: "500",
+    color: Colors.secondaryFont,
+    textAlign: "right",
   },
-  leaderRole: {
-    fontSize: 12,
-    color: Colors.mutedFont,
-    marginTop: 2,
+  detailDivider: {
+    height: 1,
+    backgroundColor: Colors.lightBorder,
   },
   notice: {
     flexDirection: "row",

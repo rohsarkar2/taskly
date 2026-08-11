@@ -22,7 +22,9 @@ import Constant from "../configs/Constant";
 import { UserRole } from "../models/user";
 import { SettingsScreenProps } from "../navigation/NavigationTypes";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { clearOrganizationData } from "../store/slices/organizationSlice";
 import { clearUserData, setUserRole } from "../store/slices/userSlice";
+import { endSession } from "../utils/Session";
 import { getUserRoleMeta } from "../utils/Formatters";
 
 const ROLE_OPTIONS: SheetOption[] = (
@@ -78,8 +80,10 @@ const Settings: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {
           text: "Sign Out",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
+            await endSession();
             dispatch(clearUserData());
+            dispatch(clearOrganizationData());
             navigation.reset({ index: 0, routes: [{ name: "Welcome" }] });
           },
         },

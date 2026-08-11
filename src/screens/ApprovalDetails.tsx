@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Avatar,
@@ -15,25 +16,24 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   RenderHtml,
   SectionHeader,
   TimelineItem,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import {
-  getActivityByTaskId,
-  getProjectById,
-  getTaskById,
-  getUserById,
-} from "../data";
+import { ActivityModel, TaskModel } from "../models/task";
 import { ApprovalDetailsScreenProps } from "../navigation/NavigationTypes";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
 import {
   formatDate,
+  getAvatarColor,
   getTaskPriorityMeta,
   getTaskStatusMeta,
 } from "../utils/Formatters";
+import { mapApiTaskDetails } from "../utils/Mappers";
 
 const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
   navigation,
@@ -41,8 +41,52 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
 }) => {
   const { taskId } = route.params;
   const user = useAppSelector((state) => state.user.userData);
-  const task = getTaskById(taskId);
-  const activity = useMemo(() => getActivityByTaskId(taskId), [taskId]);
+
+  const [task, setTask] = useState<TaskModel | null>(null);
+  const [activity, setActivity] = useState<ActivityModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        try {
+          const response = await TaskService.getTaskDetails(taskId);
+          if (!active) return;
+
+          const details = mapApiTaskDetails(response?.data);
+          setTask(details.task);
+          setActivity(details.timeline);
+        } catch (caught: any) {
+          if (active) {
+            setError(caught?.message ?? "Couldn't load this approval.");
+          }
+        } finally {
+          if (active) {
+            setLoading(false);
+          }
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [taskId]),
+  );
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Approval" showBack />
+        <WhiteContainer>
+          <Loader style={styles.screenLoader} size="large" />
+        </WhiteContainer>
+      </Container>
+    );
+  }
 
   if (!task) {
     return (
@@ -51,29 +95,46 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
         <WhiteContainer>
           <EmptyState
             icon="alert-circle-outline"
-            title="Task not found"
-            subtitle="This approval may have already been handled."
+            title={error ? "Couldn't load approval" : "Task not found"}
+            subtitle={error ?? "This approval may have already been handled."}
           />
         </WhiteContainer>
       </Container>
     );
   }
 
-  const project = getProjectById(task.projectId);
-  const assignee = getUserById(task.assigneeId);
-  const creator = getUserById(task.creatorId);
+  const project = task.project;
+  const assignee = task.assignee;
+  const creator = task.creator;
 
-  const isOwnWork = task.creatorId === user?.id;
+  // The API is the authority here — it rejects a non-approver with a 403.
+  const isApprover = task.approvers.some((person) => person.id === user?.id);
+  const isOwnWork = creator?.id === user?.id;
 
   const handleApprove = () => {
     Alert.alert("Approve task", `Mark "${task.title}" as completed?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Approve",
-        onPress: () =>
-          Alert.alert("Approved", "The task has been marked completed.", [
-            { text: "OK", onPress: () => navigation.goBack() },
-          ]),
+        onPress: async () => {
+          setWorking(true);
+
+          try {
+            const response = await TaskService.approveTask(task.id);
+            Alert.alert(
+              "Approved",
+              response?.message ?? "The task has been marked completed.",
+              [{ text: "OK", onPress: () => navigation.goBack() }],
+            );
+          } catch (caught: any) {
+            Alert.alert(
+              "Couldn't approve",
+              caught?.message ?? "Something went wrong. Please try again.",
+            );
+          } finally {
+            setWorking(false);
+          }
+        },
       },
     ]);
   };
@@ -104,7 +165,10 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
               activeOpacity={0.7}
             >
               <View
-                style={[styles.projectDot, { backgroundColor: project.color }]}
+                style={[
+                  styles.projectDot,
+                  { backgroundColor: getAvatarColor(project.id) },
+                ]}
               />
               <Text style={styles.projectName}>{project.name}</Text>
               <Ionicons
@@ -115,12 +179,13 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
             </TouchableOpacity>
           ) : null}
 
-          {isOwnWork ? (
+          {!isApprover ? (
             <View style={styles.warning}>
               <Ionicons name="lock-closed" size={17} color={Colors.warning} />
               <Text style={styles.warningText}>
-                You created this task, so you can't approve it. Another eligible
-                approver has to review it.
+                {isOwnWork
+                  ? "You created this task, so you can't approve it. Another eligible approver has to review it."
+                  : "You aren't listed as an approver on this task."}
               </Text>
             </View>
           ) : null}
@@ -138,7 +203,11 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Created by</Text>
                 <View style={styles.person}>
-                  <Avatar name={creator?.name ?? "Unknown"} size={26} />
+                  <Avatar
+                    name={creator?.name ?? "Unknown"}
+                    image={creator?.image}
+                    size={26}
+                  />
                   <Text style={styles.personName}>
                     {creator?.name ?? "Unknown"}
                   </Text>
@@ -148,7 +217,11 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Assigned to</Text>
                 <View style={styles.person}>
-                  <Avatar name={assignee?.name ?? "Unknown"} size={26} />
+                  <Avatar
+                    name={assignee?.name ?? "Unknown"}
+                    image={assignee?.image}
+                    size={26}
+                  />
                   <Text style={styles.personName}>
                     {assignee?.name ?? "Unknown"}
                   </Text>
@@ -173,14 +246,18 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
               }
             />
             <View style={styles.card}>
-              {activity.slice(0, 4).map((item, index, list) => (
-                <TimelineItem
-                  key={item.id}
-                  item={item}
-                  isLast={index === list.length - 1}
-                  showDate
-                />
-              ))}
+              {activity.length > 0 ? (
+                activity.slice(0, 4).map((item, index, list) => (
+                  <TimelineItem
+                    key={item.id}
+                    item={item}
+                    isLast={index === list.length - 1}
+                    showDate
+                  />
+                ))
+              ) : (
+                <Text style={styles.detailLabel}>No activity yet</Text>
+              )}
             </View>
           </View>
 
@@ -201,9 +278,9 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
             </Text>
           </TouchableOpacity>
 
-          {!isOwnWork ? (
+          {isApprover ? (
             <View style={styles.actions}>
-              <Button title="Approve" onPress={handleApprove} />
+              <Button title="Approve" loading={working} onPress={handleApprove} />
               <Button
                 title="Return for Changes"
                 variant="secondary"
@@ -242,6 +319,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 48,
+  },
+  screenLoader: {
+    flex: 1,
   },
   title: {
     fontSize: 21,

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -7,74 +7,102 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Avatar,
   Container,
   Header,
+  Loader,
   SectionHeader,
   StatCard,
   TaskCard,
   TimelineItem,
   WhiteContainer,
 } from "../components";
+import type { TaskCardTask } from "../components/TaskCard";
 import Colors from "../configs/Colors";
-import {
-  getPendingApprovalsFor,
-  getTasksAssignedTo,
-  organization,
-  recentActivity,
-} from "../data";
-import { TaskModel } from "../models/task";
+import { DashboardSummaryModel, DashboardTaskModel } from "../models/dashboard";
+import { ActivityModel } from "../models/task";
 import { HomeScreenProps } from "../navigation/NavigationTypes";
+import DashboardService from "../services/DashboardService";
 import { useAppSelector } from "../store/hooks";
-import { daysUntil, greetingForNow, isOverdue } from "../utils/Formatters";
+import { greetingForNow } from "../utils/Formatters";
+import { mapDashboard, mapDashboardTask } from "../utils/Mappers";
 
 const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
   const user = useAppSelector((state) => state.user.userData);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
+  );
 
-  const {
-    myTasks,
-    todayTasks,
-    inProgressTasks,
-    pendingApprovalTasks,
-    completedTasks,
-    overdueTasks,
-    upcomingTasks,
-    approvalQueue,
-  } = useMemo(() => {
-    const assigned = user ? getTasksAssignedTo(user.id) : [];
-    const open = assigned.filter((task) => task.status !== "completed");
+  const [summary, setSummary] = useState<DashboardSummaryModel | null>(null);
+  const [todaysTasks, setTodaysTasks] = useState<DashboardTaskModel[]>([]);
+  const [upcomingTasks, setUpcomingTasks] = useState<DashboardTaskModel[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    return {
-      myTasks: assigned,
-      todayTasks: open.filter((task) => daysUntil(task.dueDate) === 0),
-      inProgressTasks: assigned.filter((task) => task.status === "in-progress"),
-      pendingApprovalTasks: assigned.filter(
-        (task) => task.status === "pending-approval",
-      ),
-      completedTasks: assigned.filter((task) => task.status === "completed"),
-      overdueTasks: open.filter((task) => isOverdue(task.dueDate, task.status)),
-      upcomingTasks: open
-        .filter((task) => daysUntil(task.dueDate) > 0)
-        .sort(
-          (a, b) =>
-            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
-        ),
-      approvalQueue: user ? getPendingApprovalsFor(user) : [],
-    };
-  }, [user]);
+  const loadDashboard = useCallback(async () => {
+    try {
+      setError(null);
+
+      const [dashboardResponse, upcomingResponse] = await Promise.all([
+        DashboardService.getDashboard(),
+        DashboardService.getUpcomingTasks(),
+      ]);
+
+      const dashboard = mapDashboard(dashboardResponse?.data);
+      setSummary(dashboard.summary);
+      setTodaysTasks(dashboard.todaysTasks);
+      setRecentActivity(dashboard.recentActivity);
+      setUpcomingTasks(
+        (upcomingResponse?.data?.tasks ?? []).map(mapDashboardTask),
+      );
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load your dashboard.");
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        await loadDashboard();
+        if (active) {
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [loadDashboard]),
+  );
 
   const isApprover = user?.role === "team-lead" || user?.role === "manager";
+  const awaitingMyApproval = summary?.awaitingMyApproval ?? 0;
+  const overdueCount = summary?.overdueTasks ?? 0;
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 700);
+    await loadDashboard();
+    setRefreshing(false);
   };
 
-  const gotoTaskDetails = (task: TaskModel) =>
+  const gotoTaskDetails = (task: TaskCardTask) =>
     navigation.navigate("TaskDetails", { taskId: task.id });
+
+  const renderTask = (task: DashboardTaskModel) => (
+    <TaskCard
+      key={task.id}
+      task={task}
+      onPress={gotoTaskDetails}
+      showAssignee={false}
+    />
+  );
 
   const renderGreeting = () => (
     <View style={styles.greetingRow}>
@@ -82,7 +110,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
         <Text style={styles.greeting}>
           {greetingForNow()}, {user?.name?.split(" ")[0] ?? "there"} 👋
         </Text>
-        <Text style={styles.organization}>{organization.name}</Text>
+        <Text style={styles.organization}>{organization?.name ?? ""}</Text>
       </View>
       <TouchableOpacity
         onPress={() => navigation.navigate("Profile")}
@@ -111,19 +139,35 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
         >
           {renderGreeting()}
 
+          {error ? (
+            <TouchableOpacity
+              style={styles.errorBanner}
+              onPress={handleRefresh}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="cloud-offline-outline"
+                size={18}
+                color={Colors.danger}
+              />
+              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorRetry}>Retry</Text>
+            </TouchableOpacity>
+          ) : null}
+
           {/* Stats */}
           <View style={styles.statsRow}>
             <StatCard
               icon="today-outline"
               label="Today"
-              value={todayTasks.length}
+              value={todaysTasks.length}
               color={Colors.primary}
               onPress={() => navigation.navigate("MyTasks")}
             />
             <StatCard
               icon="play-circle-outline"
               label="In Progress"
-              value={inProgressTasks.length}
+              value={summary?.inProgressTasks ?? 0}
               color={Colors.statusInProgress}
               onPress={() =>
                 navigation.navigate("Tasks", { filter: "in-progress" })
@@ -134,7 +178,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             <StatCard
               icon="hourglass-outline"
               label="Awaiting"
-              value={pendingApprovalTasks.length}
+              value={summary?.pendingApprovals ?? 0}
               color={Colors.statusPendingApproval}
               onPress={() =>
                 navigation.navigate("Tasks", { filter: "pending-approval" })
@@ -143,7 +187,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             <StatCard
               icon="checkmark-circle-outline"
               label="Completed"
-              value={completedTasks.length}
+              value={summary?.completedTasks ?? 0}
               color={Colors.success}
               onPress={() =>
                 navigation.navigate("Tasks", { filter: "completed" })
@@ -152,11 +196,11 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
           </View>
 
           {/* Approver call to action */}
-          {isApprover && approvalQueue.length > 0 ? (
+          {isApprover && awaitingMyApproval > 0 ? (
             <TouchableOpacity
               style={styles.approvalBanner}
               onPress={() => navigation.navigate("PendingApprovals")}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
               <View style={styles.approvalIcon}>
                 <Ionicons
@@ -167,8 +211,8 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
               <View style={styles.approvalText}>
                 <Text style={styles.approvalTitle}>
-                  {approvalQueue.length} task
-                  {approvalQueue.length === 1 ? "" : "s"} waiting on you
+                  {awaitingMyApproval} task
+                  {awaitingMyApproval === 1 ? "" : "s"} waiting on you
                 </Text>
                 <Text style={styles.approvalSubtitle}>
                   Review and approve pending work
@@ -178,23 +222,23 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             </TouchableOpacity>
           ) : null}
 
-          {/* Overdue */}
-          {overdueTasks.length > 0 ? (
-            <View style={[styles.section, { marginTop: 10 }]}>
-              <SectionHeader
-                title={`Overdue (${overdueTasks.length})`}
-                actionTitle="See all"
-                onActionPress={() => navigation.navigate("MyTasks")}
+          {/* Overdue — the dashboard sends the count, not the tasks */}
+          {overdueCount > 0 ? (
+            <TouchableOpacity
+              style={styles.overdueBanner}
+              onPress={() => navigation.navigate("MyTasks")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="alert-circle" size={20} color={Colors.danger} />
+              <Text style={styles.overdueText}>
+                {overdueCount} overdue task{overdueCount === 1 ? "" : "s"}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={Colors.danger}
               />
-              {overdueTasks.slice(0, 2).map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onPress={gotoTaskDetails}
-                  showAssignee={false}
-                />
-              ))}
-            </View>
+            </TouchableOpacity>
           ) : null}
 
           {/* Quick actions */}
@@ -202,7 +246,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.primaryAction}
               onPress={() => navigation.navigate("CreateTask")}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
             >
               <Ionicons name="add" size={20} color={Colors.white} />
               <Text style={styles.primaryActionText}>New Task</Text>
@@ -210,7 +254,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.secondaryAction}
               onPress={() => navigation.navigate("MyTasks")}
-              activeOpacity={0.85}
+              activeOpacity={0.7}
             >
               <Ionicons
                 name="person-outline"
@@ -221,49 +265,31 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* My tasks */}
+          {/* Due today */}
           <View style={styles.section}>
             <SectionHeader
-              title="My Tasks"
+              title="Due Today"
               actionTitle="See all"
               onActionPress={() =>
                 navigation.navigate("Tasks", { filter: "my-tasks" })
               }
             />
-            {myTasks.filter((task) => task.status !== "completed").length >
-            0 ? (
-              myTasks
-                .filter((task) => task.status !== "completed")
-                .slice(0, 3)
-                .map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onPress={gotoTaskDetails}
-                    showAssignee={false}
-                  />
-                ))
+            {loading ? (
+              <Loader style={styles.sectionLoader} />
+            ) : todaysTasks.length > 0 ? (
+              todaysTasks.slice(0, 3).map(renderTask)
             ) : (
-              <Text style={styles.empty}>
-                Nothing assigned to you right now
-              </Text>
+              <Text style={styles.empty}>Nothing due today</Text>
             )}
           </View>
 
           {/* Upcoming */}
           <View style={styles.section}>
             <SectionHeader title="Upcoming" />
-            {upcomingTasks.length > 0 ? (
-              upcomingTasks
-                .slice(0, 3)
-                .map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onPress={gotoTaskDetails}
-                    showAssignee={false}
-                  />
-                ))
+            {loading ? (
+              <Loader style={styles.sectionLoader} />
+            ) : upcomingTasks.length > 0 ? (
+              upcomingTasks.slice(0, 3).map(renderTask)
             ) : (
               <Text style={styles.empty}>No upcoming deadlines</Text>
             )}
@@ -273,14 +299,22 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={styles.section}>
             <SectionHeader title="Recent Activity" />
             <View style={styles.activityCard}>
-              {recentActivity.slice(0, 5).map((item, index, list) => (
-                <TimelineItem
-                  key={item.id}
-                  item={item}
-                  isLast={index === list.length - 1}
-                  showDate
-                />
-              ))}
+              {loading ? (
+                <Loader />
+              ) : recentActivity.length > 0 ? (
+                recentActivity
+                  .slice(0, 5)
+                  .map((item, index, list) => (
+                    <TimelineItem
+                      key={item.id}
+                      item={item}
+                      isLast={index === list.length - 1}
+                      showDate
+                    />
+                  ))
+              ) : (
+                <Text style={styles.empty}>No activity yet</Text>
+              )}
             </View>
           </View>
         </ScrollView>
@@ -326,6 +360,46 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.dangerSoft,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.danger,
+  },
+  errorRetry: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.danger,
+  },
+  overdueBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.dangerSoft,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  overdueText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.danger,
+  },
+  sectionLoader: {
+    paddingVertical: 24,
+  },
   approvalBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -334,6 +408,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 8,
     gap: 12,
+    marginBottom: 20,
   },
   approvalIcon: {
     width: 40,

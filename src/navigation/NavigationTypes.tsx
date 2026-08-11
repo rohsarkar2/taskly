@@ -23,7 +23,8 @@ export type RootStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
-  ResetPassword: { email?: string } | undefined;
+  /** `token` comes from verify-reset-otp — reset-password won't take the OTP. */
+  ResetPassword: { email?: string; token?: string } | undefined;
   PendingApproval: undefined;
   AccountSuspended: undefined;
 

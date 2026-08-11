@@ -1,21 +1,23 @@
-import React, { useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { FlatList, RefreshControl, StyleSheet, Text } from "react-native";
 import {
   Container,
   EmptyState,
   FilterChips,
   Header,
+  Loader,
   SearchBar,
   WhiteContainer,
   TaskCard,
 } from "../components";
 import type { ChipItem } from "../components";
 import Colors from "../configs/Colors";
-import { getTasksAssignedTo, getTeamMembersFor } from "../data";
 import { TaskModel } from "../models/task";
 import { TeamTasksScreenProps } from "../navigation/NavigationTypes";
+import TaskService from "../services/TaskService";
 import { useAppSelector } from "../store/hooks";
 import { isOverdue } from "../utils/Formatters";
+import { mapApiTask } from "../utils/Mappers";
 
 type TeamTaskFilter =
   | "all"
@@ -32,40 +34,71 @@ const FILTERS: ChipItem<TeamTaskFilter>[] = [
   { key: "blocked", label: "Blocked" },
 ];
 
+/** Overdue has no server-side equivalent, so that chip filters locally. */
+const FILTER_STATUS: Record<TeamTaskFilter, string | undefined> = {
+  all: undefined,
+  overdue: undefined,
+  "in-progress": "in_progress",
+  "pending-approval": "pending_approval",
+  blocked: "blocked",
+};
+
 const TeamTasks: React.FC<TeamTasksScreenProps> = ({ navigation }) => {
   const user = useAppSelector((state) => state.user.userData);
   const [filter, setFilter] = useState<TeamTaskFilter>("all");
   const [query, setQuery] = useState("");
+  const [teamTasks, setTeamTasks] = useState<TaskModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const teamTasks = useMemo(() => {
-    if (!user) return [];
+  // `scope=team` is project work that isn't assigned to you.
+  const loadTasks = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await TaskService.teamTasks({
+        status: FILTER_STATUS[filter],
+        search: query.trim() || undefined,
+        sortBy: "dueDate",
+        sortOrder: "asc",
+      });
+      setTeamTasks((response?.data?.tasks ?? []).map(mapApiTask));
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load team tasks.");
+      setTeamTasks([]);
+    }
+  }, [filter, query]);
 
-    return getTeamMembersFor(user).flatMap((member) =>
-      getTasksAssignedTo(member.id)
-    );
-  }, [user]);
+  useEffect(() => {
+    let active = true;
 
-  const visible = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    // Debounced so typing in the search bar doesn't fire a call per keystroke.
+    const timer = setTimeout(async () => {
+      await loadTasks();
+      if (active) {
+        setLoading(false);
+      }
+    }, 300);
 
-    return teamTasks
-      .filter((task) => {
-        if (filter === "overdue") {
-          return isOverdue(task.dueDate, task.status);
-        }
-        if (filter !== "all") {
-          return task.status === filter;
-        }
-        return true;
-      })
-      .filter(
-        (task) =>
-          !normalizedQuery || task.title.toLowerCase().includes(normalizedQuery)
-      )
-      .sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-      );
-  }, [teamTasks, filter, query]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [loadTasks]);
+
+  const visible = useMemo(
+    () =>
+      filter === "overdue"
+        ? teamTasks.filter((task) => isOverdue(task.dueDate, task.status))
+        : teamTasks,
+    [teamTasks, filter]
+  );
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadTasks();
+    setRefreshing(false);
+  };
 
   const gotoTaskDetails = (task: TaskModel) =>
     navigation.navigate("TaskDetails", { taskId: task.id });
@@ -98,16 +131,29 @@ const TeamTasks: React.FC<TeamTasksScreenProps> = ({ navigation }) => {
             visible.length === 0 && styles.listEmpty,
           ]}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <EmptyState
-              icon="people-outline"
-              title="No team tasks here"
-              subtitle={
-                user?.role === "team-member"
-                  ? "Team views are available to Team Leads and Managers."
-                  : "Nothing matches this filter right now."
-              }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
             />
+          }
+          ListEmptyComponent={
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "people-outline"}
+                title={error ? "Couldn't load team tasks" : "No team tasks here"}
+                subtitle={
+                  error ??
+                  (user?.role === "team-member"
+                    ? "Team views are available to Team Leads and Managers."
+                    : "Nothing matches this filter right now.")
+                }
+              />
+            )
           }
         />
       </WhiteContainer>

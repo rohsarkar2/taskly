@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,15 +19,23 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { currentUser, organization } from "../data";
 import { SignUpScreenProps } from "../navigation/NavigationTypes";
+import UserService from "../services/UserService";
 import { useAppDispatch } from "../store/hooks";
+import { setOrganizationData } from "../store/slices/organizationSlice";
 import { setUserData } from "../store/slices/userSlice";
 import { isPasswordValid } from "../utils/Formatters";
+import { mapApiOrganization, mapAuthResponse } from "../utils/Mappers";
+import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
 
 type FormErrors = Partial<
   Record<
-    "organizationId" | "name" | "email" | "password" | "confirmPassword",
+    | "organizationId"
+    | "name"
+    | "email"
+    | "phone"
+    | "password"
+    | "confirmPassword",
     string
   >
 >;
@@ -36,6 +45,7 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [organizationId, setOrganizationId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [agreeToTerms, setAgreeToTerms] = useState(false);
@@ -54,6 +64,9 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       nextErrors.email = "Enter a valid email address";
     }
+    if (!/^\+?[1-9]\d{1,14}$/.test(phone)) {
+      nextErrors.phone = "Enter a valid phone number";
+    }
     if (!isPasswordValid(password)) {
       nextErrors.password = "Password does not meet all requirements";
     }
@@ -65,28 +78,51 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSignUp = () => {
+  // Every employee registers as a pending Team Member — the admin decides the
+  // final role from Taskly Admin. Organizations with auto-approval turned on
+  // come back active instead, and skip the waiting screen.
+  const handleSignUp = async () => {
     if (!validate()) {
       return;
     }
 
     setLoading(true);
 
-    // Every employee registers as a pending Team Member — the admin decides
-    // the final role from Taskly Admin.
-    setTimeout(() => {
-      setLoading(false);
-      dispatch(
-        setUserData({
-          ...currentUser,
-          name: name.trim(),
-          email: email.trim(),
-          role: "team-member",
-          status: "pending",
-        })
-      );
+    try {
+      const response = await UserService.registerUser({
+        uniqueOrganizationId: organizationId.trim(),
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        phoneNumber: phone.trim(),
+      });
+
+      const userData = mapAuthResponse(response?.data);
+
+      await saveAccessToken(userData.accessToken);
+      await saveRefreshToken(userData.refreshToken);
+      dispatch(setUserData(userData));
+
+      if (response?.data?.organization) {
+        dispatch(
+          setOrganizationData(mapApiOrganization(response.data.organization)),
+        );
+      }
+
+      if (userData.status === "active") {
+        navigation.replace("MainTabs", { screen: "Home" });
+        return;
+      }
+
       navigation.replace("PendingApproval");
-    }, 700);
+    } catch (error: any) {
+      Alert.alert(
+        "Registration failed",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -110,7 +146,7 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
             <Input
               label="Organization ID"
               icon="business-outline"
-              placeholder={organization.uniqueOrganizationId}
+              placeholder="ACME-482913"
               value={organizationId}
               onChangeText={setOrganizationId}
               autoCapitalize="characters"
@@ -136,6 +172,17 @@ const SignUp: React.FC<SignUpScreenProps> = ({ navigation }) => {
               keyboardType="email-address"
               autoCapitalize="none"
               error={errors.email}
+            />
+
+            <Input
+              label="Phone"
+              icon="call-outline"
+              placeholder="+1234567890"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              error={errors.phone}
             />
 
             <Input

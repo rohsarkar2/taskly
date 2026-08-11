@@ -1,18 +1,20 @@
 import { configureStore, combineReducers } from "@reduxjs/toolkit";
 import { persistStore, persistReducer } from "redux-persist";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import organizationReducer from "./slices/organizationSlice";
 import userReducer from "./slices/userSlice";
 
 // Combine reducers
 const rootReducer = combineReducers({
   user: userReducer,
+  organization: organizationReducer,
 });
 
 // Persist configuration
 const persistConfig = {
   key: "root",
   storage: AsyncStorage,
-  whitelist: ["user"], // only user will be persisted
+  whitelist: ["user", "organization"], // session state survives a restart
 };
 
 // Create persisted reducer

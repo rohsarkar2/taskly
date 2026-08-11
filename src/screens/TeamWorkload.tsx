@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,39 +12,74 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   ProgressBar,
   SectionHeader,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { getTasksAssignedTo, getTeamMembersFor } from "../data";
+import { ProjectMemberModel } from "../models/project";
+import { TaskModel } from "../models/task";
 import { TeamWorkloadScreenProps } from "../navigation/NavigationTypes";
 import { useAppSelector } from "../store/hooks";
 import { isOverdue } from "../utils/Formatters";
+import { fetchTeamRoster, fetchTeamTasks } from "../utils/Team";
 
 const TeamWorkload: React.FC<TeamWorkloadScreenProps> = ({ navigation }) => {
   const user = useAppSelector((state) => state.user.userData);
 
-  const workload = useMemo(() => {
-    if (!user) return [];
+  const [team, setTeam] = useState<ProjectMemberModel[]>([]);
+  const [teamTasks, setTeamTasks] = useState<TaskModel[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    return getTeamMembersFor(user)
-      .map((member) => {
-        const tasks = getTasksAssignedTo(member.id);
-        const open = tasks.filter((task) => task.status !== "completed");
+  // Composed from the project rosters and `scope=team` — the workload endpoint
+  // only reports your own load, not the team's.
+  useEffect(() => {
+    let active = true;
 
-        return {
-          member,
-          total: tasks.length,
-          open: open.length,
-          overdue: tasks.filter((task) => isOverdue(task.dueDate, task.status))
-            .length,
-          awaiting: tasks.filter((task) => task.status === "pending-approval")
-            .length,
-        };
-      })
-      .sort((a, b) => b.open - a.open);
-  }, [user]);
+    (async () => {
+      const [roster, tasks] = await Promise.all([
+        fetchTeamRoster(user?.id).catch(() => []),
+        fetchTeamTasks().catch(() => []),
+      ]);
+
+      if (!active) return;
+      setTeam(roster);
+      setTeamTasks(tasks);
+      setLoading(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  const tasksFor = useCallback(
+    (memberId: string) =>
+      teamTasks.filter((task) => task.assignee?.id === memberId),
+    [teamTasks]
+  );
+
+  const workload = useMemo(
+    () =>
+      team
+        .map((member) => {
+          const tasks = tasksFor(member.id);
+
+          return {
+            member,
+            total: tasks.length,
+            open: tasks.filter((task) => task.status !== "completed").length,
+            overdue: tasks.filter((task) =>
+              isOverdue(task.dueDate, task.status)
+            ).length,
+            awaiting: tasks.filter((task) => task.status === "pending-approval")
+              .length,
+          };
+        })
+        .sort((a, b) => b.open - a.open),
+    [team, tasksFor]
+  );
 
   // Scale each bar against the busiest person so the comparison is readable.
   const busiest = Math.max(1, ...workload.map((entry) => entry.open));
@@ -56,16 +91,20 @@ const TeamWorkload: React.FC<TeamWorkloadScreenProps> = ({ navigation }) => {
     return { text: "Overloaded", color: Colors.danger };
   };
 
-  if (workload.length === 0) {
+  if (loading || workload.length === 0) {
     return (
       <Container>
         <Header title="Team Workload" showBack />
         <WhiteContainer>
-          <EmptyState
-            icon="bar-chart-outline"
-            title="No team to show"
-            subtitle="Workload views are available to Team Leads and Managers."
-          />
+          {loading ? (
+            <Loader style={styles.screenLoader} size="large" />
+          ) : (
+            <EmptyState
+              icon="bar-chart-outline"
+              title="No team to show"
+              subtitle="Workload views are available to Team Leads and Managers."
+            />
+          )}
         </WhiteContainer>
       </Container>
     );
@@ -109,13 +148,13 @@ const TeamWorkload: React.FC<TeamWorkloadScreenProps> = ({ navigation }) => {
                 <View style={styles.cardHeader}>
                   <Avatar
                     name={entry.member.name}
-                    image={entry.member.image}
+                    image={entry.member.avatar}
                     size={38}
                   />
                   <View style={styles.cardHeaderText}>
                     <Text style={styles.memberName}>{entry.member.name}</Text>
                     <Text style={styles.memberRole}>
-                      {entry.member.jobTitle}
+                      {entry.member.designation}
                     </Text>
                   </View>
                   <View
@@ -189,6 +228,9 @@ const TeamWorkload: React.FC<TeamWorkloadScreenProps> = ({ navigation }) => {
 export default TeamWorkload;
 
 const styles = StyleSheet.create({
+  screenLoader: {
+    flex: 1,
+  },
   container: {
     paddingTop: 12,
     paddingHorizontal: 16,

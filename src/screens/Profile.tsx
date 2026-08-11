@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { CommonActions } from "@react-navigation/native";
+import { CommonActions, useFocusEffect } from "@react-navigation/native";
 import {
   Avatar,
   Badge,
@@ -10,31 +10,65 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import {
-  getPendingApprovalsFor,
-  getTasksAssignedTo,
-  organization,
-} from "../data";
+import { DashboardSummaryModel } from "../models/dashboard";
 import { ProfileScreenProps } from "../navigation/NavigationTypes";
+import DashboardService from "../services/DashboardService";
+import ProfileService from "../services/ProfileService";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { clearUserData } from "../store/slices/userSlice";
+import { clearOrganizationData } from "../store/slices/organizationSlice";
+import { clearUserData, updateUserData } from "../store/slices/userSlice";
+import { endSession } from "../utils/Session";
 import { getUserRoleMeta } from "../utils/Formatters";
+import { mapApiUser, mapDashboardSummary } from "../utils/Mappers";
 
 const Profile: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.user.userData);
+  const organization = useAppSelector(
+    (state) => state.organization.organizationData,
+  );
 
-  const stats = useMemo(() => {
-    const assigned = user ? getTasksAssignedTo(user.id) : [];
+  const [summary, setSummary] = useState<DashboardSummaryModel | null>(null);
 
-    return {
-      assigned: assigned.length,
-      completed: assigned.filter((task) => task.status === "completed").length,
-      open: assigned.filter((task) => task.status !== "completed").length,
-    };
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-  const approvalCount = user ? getPendingApprovalsFor(user).length : 0;
+      // The profile is the source of truth for the identity block; the
+      // dashboard summary backs the counters underneath it.
+      (async () => {
+        try {
+          const response = await ProfileService.getProfile();
+          if (active && response?.data?.user) {
+            dispatch(updateUserData(mapApiUser(response.data.user)));
+          }
+        } catch {
+          // Keep showing the persisted profile — nothing here is destructive.
+        }
+
+        try {
+          const response = await DashboardService.getDashboard();
+          if (active) {
+            setSummary(mapDashboardSummary(response?.data?.summary));
+          }
+        } catch {
+          // Counters stay blank rather than blocking the screen.
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [dispatch]),
+  );
+
+  const stats = {
+    assigned: summary?.assignedTasks ?? 0,
+    open: summary?.openTasks ?? 0,
+    completed: summary?.completedTasks ?? 0,
+  };
+
+  const approvalCount = summary?.awaitingMyApproval ?? 0;
   const isApprover = user?.role === "team-lead" || user?.role === "manager";
 
   const handleSignOut = () => {
@@ -43,8 +77,10 @@ const Profile: React.FC<ProfileScreenProps> = ({ navigation }) => {
       {
         text: "Sign Out",
         style: "destructive",
-        onPress: () => {
+        onPress: async () => {
+          await endSession();
           dispatch(clearUserData());
+          dispatch(clearOrganizationData());
           // Reset the root stack, not the tab navigator this screen sits in.
           navigation.dispatch(
             CommonActions.reset({ index: 0, routes: [{ name: "Welcome" }] }),
@@ -70,7 +106,7 @@ const Profile: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <View style={styles.badges}>
               {user ? <Badge meta={getUserRoleMeta(user.role)} /> : null}
             </View>
-            <Text style={styles.organization}>{organization.name}</Text>
+            <Text style={styles.organization}>{organization?.name ?? ""}</Text>
           </View>
 
           {/* Snapshot */}
@@ -141,7 +177,7 @@ const Profile: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <ListRow
               icon="business-outline"
               title="Organization"
-              subtitle={organization.uniqueOrganizationId}
+              subtitle={organization?.uniqueOrganizationId}
               onPress={() => navigation.navigate("OrganizationInfo")}
             />
             <View style={styles.rowDivider} />

@@ -1,30 +1,67 @@
-import React, { useMemo, useState } from "react";
-import { SectionList, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   Container,
   EmptyState,
   Header,
+  Loader,
   SegmentedTabs,
   TaskCard,
   WhiteContainer,
 } from "../components";
 import type { TabItem } from "../components";
 import Colors from "../configs/Colors";
-import { getTasksAssignedTo } from "../data";
 import { TaskModel } from "../models/task";
 import { MyTasksScreenProps } from "../navigation/NavigationTypes";
-import { useAppSelector } from "../store/hooks";
+import TaskService from "../services/TaskService";
 import { daysUntil, isOverdue } from "../utils/Formatters";
+import { mapApiTask } from "../utils/Mappers";
 
 type Bucket = "open" | "completed";
 
 const MyTasks: React.FC<MyTasksScreenProps> = ({ navigation }) => {
-  const user = useAppSelector((state) => state.user.userData);
   const [bucket, setBucket] = useState<Bucket>("open");
+  const [assigned, setAssigned] = useState<TaskModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const assigned = useMemo(
-    () => (user ? getTasksAssignedTo(user.id) : []),
-    [user]
+  const loadTasks = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await TaskService.assignedTasks({
+        sortBy: "dueDate",
+        sortOrder: "asc",
+      });
+      setAssigned((response?.data?.tasks ?? []).map(mapApiTask));
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load your tasks.");
+      setAssigned([]);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        await loadTasks();
+        if (active) {
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, [loadTasks]),
   );
 
   const byDueDate = (a: TaskModel, b: TaskModel) =>
@@ -61,6 +98,12 @@ const MyTasks: React.FC<MyTasksScreenProps> = ({ navigation }) => {
       count: assigned.filter((task) => task.status === "completed").length,
     },
   ];
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadTasks();
+    setRefreshing(false);
+  };
 
   return (
     <Container>
@@ -104,20 +147,35 @@ const MyTasks: React.FC<MyTasksScreenProps> = ({ navigation }) => {
           ]}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
-          ListEmptyComponent={
-            <EmptyState
-              icon="sparkles-outline"
-              title={
-                bucket === "open"
-                  ? "You're all caught up"
-                  : "Nothing finished yet"
-              }
-              subtitle={
-                bucket === "open"
-                  ? "No open tasks are assigned to you right now."
-                  : "Completed tasks will collect here."
-              }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
             />
+          }
+          ListEmptyComponent={
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "sparkles-outline"}
+                title={
+                  error
+                    ? "Couldn't load your tasks"
+                    : bucket === "open"
+                    ? "You're all caught up"
+                    : "Nothing finished yet"
+                }
+                subtitle={
+                  error ??
+                  (bucket === "open"
+                    ? "No open tasks are assigned to you right now."
+                    : "Completed tasks will collect here.")
+                }
+              />
+            )
           }
         />
       </WhiteContainer>

@@ -8,28 +8,37 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Colors from "../configs/Colors";
-import { UserModel } from "../models/user";
+import { UserRole } from "../models/user";
 import { getUserRoleMeta } from "../utils/Formatters";
 import Avatar from "./Avatar";
 import Badge from "./Badge";
 
-type MemberRowProps = {
-  member: UserModel;
+/** Wide enough for both a full UserModel and a project member row. */
+export type MemberRowPerson = {
+  id: string;
+  name: string;
+  role: UserRole;
+  image?: string;
+  jobTitle?: string;
+};
+
+type MemberRowProps<T extends MemberRowPerson> = {
+  member: T;
   subtitle?: string;
   right?: React.ReactNode;
-  onPress?: (member: UserModel) => void;
+  onPress?: (member: T) => void;
   showChevron?: boolean;
   style?: ViewStyle;
 };
 
-const MemberRow: React.FC<MemberRowProps> = ({
+const MemberRow = <T extends MemberRowPerson>({
   member,
   subtitle,
   right,
   onPress,
   showChevron = false,
   style,
-}) => (
+}: MemberRowProps<T>) => (
   <TouchableOpacity
     style={[styles.row, style]}
     onPress={() => onPress?.(member)}
@@ -47,7 +56,13 @@ const MemberRow: React.FC<MemberRowProps> = ({
       </Text>
     </View>
 
-    {right ?? <Badge meta={getUserRoleMeta(member.role)} size="small" />}
+    {right ?? (
+      <Badge
+        meta={getUserRoleMeta(member.role)}
+        size="small"
+        style={{ alignSelf: "center" }}
+      />
+    )}
 
     {showChevron ? (
       <Ionicons

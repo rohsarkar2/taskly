@@ -1,31 +1,93 @@
-import React from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
-  Avatar,
   Button,
   Container,
   EmptyState,
   Header,
+  Loader,
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import {
-  getProjectById,
-  getTaskById,
-  getUserById,
-  notifications,
-} from "../data";
+import { NotificationModel } from "../models/notification";
 import { NotificationDetailsScreenProps } from "../navigation/NavigationTypes";
+import NotificationService from "../services/NotificationService";
 import { formatDateTime } from "../utils/Formatters";
+import { mapApiNotification } from "../utils/Mappers";
 
 const NotificationDetails: React.FC<NotificationDetailsScreenProps> = ({
   navigation,
   route,
 }) => {
-  const notification = notifications.find(
-    (item) => item.id === route.params.notificationId
+  const { notificationId } = route.params;
+
+  const [notification, setNotification] = useState<NotificationModel | null>(
+    null,
   );
+  const [loading, setLoading] = useState(true);
+
+  // There is no single-notification endpoint, so this reads the list and picks
+  // the one that was tapped.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await NotificationService.notificationList({
+          limit: 50,
+        });
+        if (!active) return;
+
+        const match = (response?.data?.notifications ?? [])
+          .map(mapApiNotification)
+          .find((item: NotificationModel) => item.id === notificationId);
+
+        setNotification(match ?? null);
+      } catch {
+        // The empty state covers a failed load.
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [notificationId]);
+
+  const handleDelete = () =>
+    Alert.alert("Delete notification", "This can't be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await NotificationService.deleteNotification(notificationId);
+            navigation.goBack();
+          } catch (caught: any) {
+            Alert.alert(
+              "Couldn't delete",
+              caught?.message ?? "Something went wrong. Please try again.",
+            );
+          }
+        },
+      },
+    ]);
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Notification" showBack />
+        <WhiteContainer>
+          <Loader style={styles.screenLoader} size="large" />
+        </WhiteContainer>
+      </Container>
+    );
+  }
 
   if (!notification) {
     return (
@@ -42,9 +104,10 @@ const NotificationDetails: React.FC<NotificationDetailsScreenProps> = ({
     );
   }
 
-  const actor = getUserById(notification.actorId);
-  const task = getTaskById(notification.taskId);
-  const project = getProjectById(notification.projectId);
+  // The notification carries the ids; the task and project screens fetch the
+  // real records themselves.
+  const taskId = notification.taskId;
+  const projectId = notification.projectId;
 
   return (
     <Container>
@@ -70,43 +133,35 @@ const NotificationDetails: React.FC<NotificationDetailsScreenProps> = ({
             </View>
           </View>
 
-          {actor ? (
-            <View style={styles.actorCard}>
-              <Avatar name={actor.name} image={actor.image} size={40} />
-              <View style={styles.actorText}>
-                <Text style={styles.actorName}>{actor.name}</Text>
-                <Text style={styles.actorRole}>{actor.jobTitle}</Text>
-              </View>
-            </View>
-          ) : null}
-
           <View style={styles.actions}>
-            {task ? (
+            {taskId ? (
               <Button
                 title="Open Task"
-                onPress={() =>
-                  navigation.navigate("TaskDetails", { taskId: task.id })
-                }
+                onPress={() => navigation.navigate("TaskDetails", { taskId })}
               />
             ) : null}
-            {project ? (
+            {projectId ? (
               <Button
                 title="Open Project"
                 variant="secondary"
                 onPress={() =>
-                  navigation.navigate("ProjectDetails", {
-                    projectId: project.id,
-                  })
+                  navigation.navigate("ProjectDetails", { projectId })
                 }
               />
             ) : null}
-            {!task && !project ? (
+            {!taskId && !projectId ? (
               <Button
                 title="Back to Notifications"
                 variant="secondary"
                 onPress={() => navigation.goBack()}
               />
             ) : null}
+            <Button
+              title="Delete"
+              variant="secondary"
+              textStyle={styles.deleteText}
+              onPress={handleDelete}
+            />
           </View>
         </ScrollView>
       </WhiteContainer>
@@ -117,6 +172,12 @@ const NotificationDetails: React.FC<NotificationDetailsScreenProps> = ({
 export default NotificationDetails;
 
 const styles = StyleSheet.create({
+  screenLoader: {
+    flex: 1,
+  },
+  deleteText: {
+    color: Colors.danger,
+  },
   container: {
     paddingTop: 12,
     paddingHorizontal: 16,

@@ -8,11 +8,11 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Colors from "../configs/Colors";
-import { TaskModel } from "../models/task";
-import { getProjectById, getUserById } from "../data";
+import { TaskModel, TaskPersonModel } from "../models/task";
 import {
   formatDueDate,
   formatShortDate,
+  getAvatarColor,
   getTaskPriorityMeta,
   getTaskStatusIcon,
   getTaskStatusMeta,
@@ -21,23 +21,39 @@ import {
 import Avatar from "./Avatar";
 import Badge from "./Badge";
 
-export type TaskCardProps = {
-  task: TaskModel;
-  onPress?: (task: TaskModel) => void;
+/**
+ * The card only needs the identity fields, so the trimmed task shape the
+ * dashboard endpoints return fits alongside a full TaskModel.
+ */
+export type TaskCardTask = Pick<
+  TaskModel,
+  "id" | "title" | "status" | "priority" | "dueDate"
+> & {
+  project?: { id: string; name: string } | null;
+  assignee?: TaskPersonModel | null;
+  commentCount?: number;
+};
+
+export type TaskCardProps<T extends TaskCardTask = TaskCardTask> = {
+  task: T;
+  onPress?: (task: T) => void;
   showProject?: boolean;
   showAssignee?: boolean;
   style?: ViewStyle;
 };
 
-const TaskCard: React.FC<TaskCardProps> = ({
+// Generic so callers holding a full TaskModel keep it in their onPress handler.
+const TaskCard = <T extends TaskCardTask>({
   task,
   onPress,
   showProject = true,
   showAssignee = true,
   style,
-}) => {
-  const project = getProjectById(task.projectId);
-  const assignee = getUserById(task.assigneeId);
+}: TaskCardProps<T>) => {
+  const project = task.project;
+  const assignee = task.assignee;
+  // The API sends no project color, so tint it off the id like avatars do.
+  const projectColor = project ? getAvatarColor(project.id) : Colors.primary;
   const statusMeta = getTaskStatusMeta(task.status);
   const priorityMeta = getTaskPriorityMeta(task.priority);
   const overdue = isOverdue(task.dueDate, task.status);
@@ -60,10 +76,10 @@ const TaskCard: React.FC<TaskCardProps> = ({
       </View>
 
       <View style={styles.metaRow}>
-        {showProject && project ? (
+        {showProject && project?.name ? (
           <View style={styles.projectPill}>
             <View
-              style={[styles.projectDot, { backgroundColor: project.color }]}
+              style={[styles.projectDot, { backgroundColor: projectColor }]}
             />
             <Text style={styles.projectName} numberOfLines={1}>
               {project.name}
@@ -95,7 +111,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </View>
 
         <View style={styles.footerRight}>
-          {task.commentCount > 0 ? (
+          {(task.commentCount ?? 0) > 0 ? (
             <View style={styles.commentRow}>
               <Ionicons
                 name="chatbubble-outline"

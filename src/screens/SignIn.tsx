@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -17,28 +18,75 @@ import {
   WhiteContainer,
 } from "../components";
 import Colors from "../configs/Colors";
-import { currentUser } from "../data";
 import { SignInScreenProps } from "../navigation/NavigationTypes";
+import UserService from "../services/UserService";
 import { useAppDispatch } from "../store/hooks";
 import { setUserData } from "../store/slices/userSlice";
+import { mapAuthResponse } from "../utils/Mappers";
+import { saveAccessToken, saveRefreshToken } from "../utils/Utils";
+
+type FormErrors = Partial<Record<"email" | "password", string>>;
 
 const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
-  const [email, setEmail] = useState(currentUser.email);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = () => {
+  const validate = (): boolean => {
+    const nextErrors: FormErrors = {};
+
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      nextErrors.email = "Enter a valid email address";
+    }
+    if (!password) {
+      nextErrors.password = "Enter your password";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSignIn = async () => {
+    if (!validate()) {
+      return;
+    }
+
     setLoading(true);
 
-    // Static build: accept anything and drop into the app as the demo user.
-    setTimeout(() => {
-      setLoading(false);
-      dispatch(
-        setUserData({ ...currentUser, email: email || currentUser.email })
-      );
+    try {
+      const response = await UserService.loginUser({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      const userData = mapAuthResponse(response?.data);
+
+      await saveAccessToken(userData.accessToken);
+      await saveRefreshToken(userData.refreshToken);
+      dispatch(setUserData(userData));
+
+      // Pending employees are allowed to log in — they just wait on the gate.
+      if (response?.data?.approvalPending || userData.status === "pending") {
+        navigation.replace("PendingApproval");
+        return;
+      }
+
+      if (userData.status === "suspended") {
+        navigation.replace("AccountSuspended");
+        return;
+      }
+
       navigation.replace("MainTabs", { screen: "Home" });
-    }, 600);
+    } catch (error: any) {
+      Alert.alert(
+        "Sign in failed",
+        error?.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -74,6 +122,7 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              error={errors.email}
             />
 
             <Input
@@ -84,6 +133,7 @@ const SignIn: React.FC<SignInScreenProps> = ({ navigation }) => {
               onChangeText={setPassword}
               isPassword
               autoCapitalize="none"
+              error={errors.password}
             />
 
             <TouchableOpacity

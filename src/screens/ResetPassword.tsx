@@ -19,6 +19,7 @@ import {
 } from "../components";
 import Colors from "../configs/Colors";
 import { ResetPasswordScreenProps } from "../navigation/NavigationTypes";
+import UserService from "../services/UserService";
 import { isPasswordValid } from "../utils/Formatters";
 
 const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
@@ -26,12 +27,13 @@ const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
   route,
 }) => {
   const email = route.params?.email;
+  const token = route.params?.token;
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!isPasswordValid(password)) {
       setError("Password does not meet all requirements");
       return;
@@ -44,14 +46,32 @@ const ResetPassword: React.FC<ResetPasswordScreenProps> = ({
     setError(undefined);
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await UserService.resetPassword({
+        token,
+        newPassword: password,
+      });
+
       Alert.alert(
         "Password updated",
-        "Your password has been changed. Please sign in with your new password.",
-        [{ text: "OK", onPress: () => navigation.navigate("SignIn") }]
+        response?.message ??
+          "Your password has been changed. Please sign in with your new password.",
+        [{ text: "OK", onPress: () => navigation.navigate("SignIn") }],
       );
-    }, 700);
+    } catch (apiError: any) {
+      Alert.alert(
+        "Couldn't reset your password",
+        apiError?.message ?? "Something went wrong. Please try again.",
+        [
+          {
+            text: "Start over",
+            onPress: () => navigation.navigate("ForgotPassword"),
+          },
+        ],
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

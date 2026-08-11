@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -12,6 +12,7 @@ import {
   Container,
   EmptyState,
   Header,
+  Loader,
   OptionSheet,
   SearchBar,
   SegmentedTabs,
@@ -20,26 +21,44 @@ import {
 } from "../components";
 import type { SheetOption, TabItem } from "../components";
 import Colors from "../configs/Colors";
-import { getProjectsForUser, tasks as allTasks } from "../data";
-import { TaskModel, TaskPriority } from "../models/task";
+import { ProjectModel } from "../models/project";
+import { TaskModel } from "../models/task";
 import { TaskFilter, TasksScreenProps } from "../navigation/NavigationTypes";
-import { useAppSelector } from "../store/hooks";
-import { daysUntil } from "../utils/Formatters";
+import ProjectService from "../services/ProjectService";
+import TaskService, { TaskListParams } from "../services/TaskService";
+import { daysUntil, getAvatarColor } from "../utils/Formatters";
+import { mapApiProject, mapApiTask } from "../utils/Mappers";
 
 type SortKey = "due-date" | "priority" | "recent";
-
-const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
-  urgent: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-};
 
 const SORT_OPTIONS: SheetOption[] = [
   { key: "due-date", label: "Due date", icon: "calendar-outline" },
   { key: "priority", label: "Priority", icon: "flag-outline" },
   { key: "recent", label: "Recently updated", icon: "time-outline" },
 ];
+
+/** The API sorts for us; the sheet keys map onto its `sortBy` values. */
+const SORT_PARAMS: Record<SortKey, Pick<TaskListParams, "sortBy" | "sortOrder">> =
+  {
+    "due-date": { sortBy: "dueDate", sortOrder: "asc" },
+    priority: { sortBy: "priority", sortOrder: "desc" },
+    recent: { sortBy: "updatedAt", sortOrder: "desc" },
+  };
+
+/** Each tab is either a scope shorthand or a status filter, never both. */
+const TAB_PARAMS: Partial<
+  Record<TaskFilter, Pick<TaskListParams, "scope" | "status">>
+> = {
+  "my-tasks": { scope: "assigned" },
+  all: {},
+  created: { scope: "created" },
+  "to-do": { status: "pending" },
+  "in-progress": { status: "in_progress" },
+  "pending-approval": { status: "pending_approval" },
+  completed: { status: "completed" },
+  rejected: { status: "rejected" },
+  blocked: { status: "blocked" },
+};
 
 const DUE_OPTIONS: SheetOption[] = [
   { key: "any", label: "Any time" },
@@ -49,10 +68,13 @@ const DUE_OPTIONS: SheetOption[] = [
 ];
 
 const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
-  const user = useAppSelector((state) => state.user.userData);
   const [activeTab, setActiveTab] = useState<TaskFilter>("my-tasks");
   const [query, setQuery] = useState("");
+  const [tasks, setTasks] = useState<TaskModel[]>([]);
+  const [myProjects, setMyProjects] = useState<ProjectModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("due-date");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [dueFilter, setDueFilter] = useState<string>("any");
@@ -67,16 +89,58 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
     }
   }, [route.params]);
 
-  const myProjects = useMemo(
-    () => (user ? getProjectsForUser(user.id) : []),
-    [user]
-  );
+  // Backs the project filter sheet — the API already scopes it to your projects.
+  useEffect(() => {
+    let active = true;
 
-  // Only tasks inside projects the user belongs to.
-  const visibleScope = useMemo(() => {
-    const projectIds = new Set(myProjects.map((project) => project.id));
-    return allTasks.filter((task) => projectIds.has(task.projectId));
-  }, [myProjects]);
+    (async () => {
+      try {
+        const response = await ProjectService.projectList();
+        if (active) {
+          setMyProjects((response?.data?.projects ?? []).map(mapApiProject));
+        }
+      } catch {
+        // The filter sheet just stays at "All projects".
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await TaskService.taskList({
+        ...TAB_PARAMS[activeTab],
+        ...SORT_PARAMS[sortKey],
+        search: query.trim() || undefined,
+        projectId: projectFilter === "all" ? undefined : projectFilter,
+      });
+      setTasks((response?.data?.tasks ?? []).map(mapApiTask));
+    } catch (caught: any) {
+      setError(caught?.message ?? "Couldn't load tasks.");
+      setTasks([]);
+    }
+  }, [activeTab, sortKey, query, projectFilter]);
+
+  useEffect(() => {
+    let active = true;
+
+    // Debounced so typing in the search bar doesn't fire a call per keystroke.
+    const timer = setTimeout(async () => {
+      await loadTasks();
+      if (active) {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [loadTasks]);
 
   const tabs: TabItem<TaskFilter>[] = [
     { key: "my-tasks", label: "My Tasks" },
@@ -87,63 +151,25 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
     { key: "completed", label: "Completed" },
   ];
 
-  const filteredTasks = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    const byTab = visibleScope.filter((task) => {
-      switch (activeTab) {
-        case "all":
+  // The due window has no server-side equivalent, so it stays a local filter.
+  const visibleTasks = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (dueFilter === "any") {
           return true;
-        case "my-tasks":
-          return task.assigneeId === user?.id;
-        case "created":
-          return task.creatorId === user?.id;
-        default:
-          return task.status === activeTab;
-      }
-    });
+        }
 
-    const byFilters = byTab.filter((task) => {
-      if (projectFilter !== "all" && task.projectId !== projectFilter) {
-        return false;
-      }
-
-      const days = daysUntil(task.dueDate);
-      if (
-        dueFilter === "overdue" &&
-        (days >= 0 || task.status === "completed")
-      ) {
-        return false;
-      }
-      if (dueFilter === "today" && days !== 0) {
-        return false;
-      }
-      if (dueFilter === "week" && (days < 0 || days > 7)) {
-        return false;
-      }
-
-      if (
-        normalizedQuery &&
-        !task.title.toLowerCase().includes(normalizedQuery)
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-
-    return [...byFilters].sort((a, b) => {
-      if (sortKey === "priority") {
-        return PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
-      }
-      if (sortKey === "recent") {
-        return (
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-      }
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-    });
-  }, [visibleScope, activeTab, user, projectFilter, dueFilter, query, sortKey]);
+        const days = daysUntil(task.dueDate);
+        if (dueFilter === "overdue") {
+          return days < 0 && task.status !== "completed";
+        }
+        if (dueFilter === "today") {
+          return days === 0;
+        }
+        return days >= 0 && days <= 7;
+      }),
+    [tasks, dueFilter]
+  );
 
   const activeFilterCount =
     (projectFilter === "all" ? 0 : 1) + (dueFilter === "any" ? 0 : 1);
@@ -153,14 +179,15 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
     ...myProjects.map((project) => ({
       key: project.id,
       label: project.name,
-      color: project.color,
+      color: getAvatarColor(project.id),
       icon: "ellipse",
     })),
   ];
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 700);
+    await loadTasks();
+    setRefreshing(false);
   };
 
   const gotoTaskDetails = (task: TaskModel) =>
@@ -254,7 +281,7 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
 
         <View style={styles.resultRow}>
           <Text style={styles.resultCount}>
-            {filteredTasks.length} task{filteredTasks.length === 1 ? "" : "s"}
+            {visibleTasks.length} task{visibleTasks.length === 1 ? "" : "s"}
           </Text>
           {activeFilterCount > 0 ? (
             <TouchableOpacity
@@ -270,24 +297,32 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
         </View>
 
         <FlatList
-          data={filteredTasks}
+          data={visibleTasks}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TaskCard task={item} onPress={gotoTaskDetails} />
           )}
           contentContainerStyle={[
             styles.list,
-            filteredTasks.length === 0 && styles.listEmpty,
+            visibleTasks.length === 0 && styles.listEmpty,
           ]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <EmptyState
-              icon="checkbox-outline"
-              title="No tasks found"
-              subtitle="Adjust your filters or create a new task."
-              actionTitle="Create Task"
-              onActionPress={() => navigation.navigate("CreateTask")}
-            />
+            loading ? (
+              <Loader size="large" />
+            ) : (
+              <EmptyState
+                icon={error ? "cloud-offline-outline" : "checkbox-outline"}
+                title={error ? "Couldn't load tasks" : "No tasks found"}
+                subtitle={
+                  error ?? "Adjust your filters or create a new task."
+                }
+                actionTitle={error ? undefined : "Create Task"}
+                onActionPress={
+                  error ? undefined : () => navigation.navigate("CreateTask")
+                }
+              />
+            )
           }
           refreshControl={
             <RefreshControl

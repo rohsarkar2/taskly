@@ -1,15 +1,15 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
   CardStyleInterpolators,
   createStackNavigator,
 } from "@react-navigation/stack";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, useFocusEffect } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { BottomTabsParamList, RootStackParamList } from "./NavigationTypes";
 import Colors from "../configs/Colors";
-import { unreadNotificationCount } from "../data";
+import NotificationService from "../services/NotificationService";
 
 // Authentication
 import Splash from "../screens/Splash";
@@ -76,15 +76,16 @@ function TabBarIcon({
   focused,
   color,
   size,
+  unreadCount,
 }: {
   routeName: keyof BottomTabsParamList;
   focused: boolean;
   color: string;
   size: number;
+  unreadCount: number;
 }) {
   const iconName = tabIcons[routeName][focused ? "active" : "inactive"];
-  const showBadge =
-    routeName === "Notifications" && unreadNotificationCount > 0;
+  const showBadge = routeName === "Notifications" && unreadCount > 0;
 
   return (
     <View>
@@ -92,7 +93,7 @@ function TabBarIcon({
       {showBadge ? (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>
-            {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+            {unreadCount > 9 ? "9+" : unreadCount}
           </Text>
         </View>
       ) : null}
@@ -100,7 +101,36 @@ function TabBarIcon({
   );
 }
 
+function useUnreadNotificationCount() {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        try {
+          const response = await NotificationService.getUnreadCount();
+          if (active) {
+            setUnreadCount(response?.data?.unreadCount ?? 0);
+          }
+        } catch {
+          // No badge is better than blocking the tab bar on a failed call.
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  return unreadCount;
+}
+
 function TabsNavigator() {
+  const unreadCount = useUnreadNotificationCount();
+
   return (
     <Tabs.Navigator
       screenOptions={({ route }) => ({
@@ -118,6 +148,7 @@ function TabsNavigator() {
             focused={focused}
             color={color}
             size={size}
+            unreadCount={unreadCount}
           />
         ),
       })}
