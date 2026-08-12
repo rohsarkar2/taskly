@@ -184,6 +184,8 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
   const canAssignOthers =
     project?.projectRole === "manager" || project?.projectRole === "team-lead";
 
+  console.log(canAssignOthers);
+
   const projectOptions: SheetOption[] = myProjects.map((item) => ({
     key: item.id,
     label: item.name,
@@ -243,7 +245,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
         isEditing
           ? "Your changes have been saved."
           : "The task has been added to the project.",
-        [{ text: "OK", onPress: () => navigation.goBack() }]
+        [{ text: "OK", onPress: () => navigation.goBack() }],
       );
     } catch (error: any) {
       Alert.alert(
@@ -260,7 +262,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
     value: string,
     icon: string,
     onPress: () => void,
-    accessory?: React.ReactNode
+    accessory?: React.ReactNode,
   ) => (
     <View style={styles.pickerBlock}>
       <Text style={styles.label}>{label}</Text>
@@ -305,7 +307,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
                     { backgroundColor: getAvatarColor(project.id) },
                   ]}
                 />
-              ) : undefined
+              ) : undefined,
             )}
 
             <Input
@@ -355,14 +357,14 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
                 name="flag"
                 size={18}
                 color={getTaskPriorityMeta(priority).color}
-              />
+              />,
             )}
 
             {renderPicker(
               "Due Date",
               formatDate(dueDate.toISOString()),
               "calendar-outline",
-              () => setShowDatePicker(true)
+              () => setShowDatePicker(true),
             )}
 
             {/* Editing can't move the task between people — only the API's
@@ -380,7 +382,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
                       image={assignee.avatar}
                       size={24}
                     />
-                  ) : undefined
+                  ) : undefined,
                 )}
 
             <View style={styles.notice}>

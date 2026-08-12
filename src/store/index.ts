@@ -15,6 +15,23 @@ const persistConfig = {
   key: "root",
   storage: AsyncStorage,
   whitelist: ["user", "organization"], // session state survives a restart
+  /**
+   * redux-persist otherwise swallows the cause behind a bare
+   * "Error storing data". The useful detail is on the native error underneath:
+   * `type` says whether it was Sqlite, the legacy file store or the module
+   * itself, and iOS carries the real NSError in `userInfo`.
+   *
+   * A failed write is not fatal — the tokens live in the Keychain and Splash
+   * re-reads them — but it means this snapshot didn't reach disk.
+   */
+  writeFailHandler: (error: any) => {
+    console.warn(
+      "[persist] failed to write session state",
+      error?.type ?? "unknown",
+      error?.errorMessage ?? error?.message,
+      error?.userInfo ?? error?.cause ?? "",
+    );
+  },
 };
 
 // Create persisted reducer
