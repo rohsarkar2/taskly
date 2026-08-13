@@ -27,6 +27,7 @@
     "react-native-pell-rich-editor": "^1.10.0",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.24.0",
+    "react-native-svg": "^15.15.5",
     "react-native-vector-icons": "^10.3.0",
     "react-native-webview": "^13.16.1",
     "react-redux": "^9.2.0",
@@ -51,6 +52,7 @@
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
+    "react-native-svg-transformer": "^1.5.3",
     "react-test-renderer": "19.2.3",
     "typescript": "^5.8.3"
   },

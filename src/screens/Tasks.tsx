@@ -312,7 +312,7 @@ const Tasks: React.FC<TasksScreenProps> = ({ navigation, route }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={error ? "cloud-offline-outline" : "checkbox-outline"}
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={error ? "Couldn't load tasks" : "No tasks found"}
                 subtitle={
                   error ?? "Adjust your filters or create a new task."

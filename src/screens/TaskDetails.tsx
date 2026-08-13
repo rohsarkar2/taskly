@@ -519,7 +519,7 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
                   </React.Fragment>
                 ))
               ) : (
-                <Text style={styles.personFallback}>No files attached</Text>
+                <EmptyState compact title="No files attached" />
               )}
             </View>
           </View>
@@ -581,7 +581,7 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
                   />
                 ))
               ) : (
-                <Text style={styles.personFallback}>No activity yet</Text>
+                <EmptyState compact title="No activity yet" />
               )}
             </View>
           </View>

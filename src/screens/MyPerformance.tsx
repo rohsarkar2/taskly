@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Container,
+  EmptyState,
   Header,
   Loader,
   ProgressBar,
@@ -190,9 +191,12 @@ const MyPerformance: React.FC<MyPerformanceScreenProps> = () => {
                 </View>
               ))
             ) : (
-              <Text style={styles.empty}>
-                {error ?? "No tasks assigned to you yet this cycle."}
-              </Text>
+              <EmptyState
+                compact
+                icon={error ? "cloud-offline-outline" : undefined}
+                title={error ? "Couldn't load your workload" : "Nothing here yet"}
+                subtitle={error ?? "No tasks assigned to you yet this cycle."}
+              />
             )}
           </View>
         </ScrollView>

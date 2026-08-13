@@ -100,7 +100,6 @@ const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
         <Header title="My Team" showBack />
         <WhiteContainer>
           <EmptyState
-            icon="people-outline"
             title="Team views are for leads"
             subtitle="Team Leads and Managers see team workload and approvals here."
           />
@@ -213,7 +212,6 @@ const MyTeam: React.FC<MyTeamScreenProps> = ({ navigation }) => {
               })
             ) : (
               <EmptyState
-                icon="people-outline"
                 title="No members found"
                 subtitle="Try a different search term."
               />

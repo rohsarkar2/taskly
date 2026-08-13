@@ -492,7 +492,6 @@ const ProjectDetails: React.FC<ProjectDetailsScreenProps> = ({
               ))
             ) : (
               <EmptyState
-                icon="checkbox-outline"
                 title="No tasks here"
                 subtitle="Nothing in this list right now."
               />

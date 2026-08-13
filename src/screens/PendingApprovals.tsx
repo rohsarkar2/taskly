@@ -168,9 +168,7 @@ const PendingApprovals: React.FC<PendingApprovalsScreenProps> = ({
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={
-                  error ? "cloud-offline-outline" : "shield-checkmark-outline"
-                }
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={error ? "Couldn't load approvals" : "Nothing to approve"}
                 subtitle={
                   error ??

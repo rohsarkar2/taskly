@@ -100,7 +100,6 @@ const TeamWorkload: React.FC<TeamWorkloadScreenProps> = ({ navigation }) => {
             <Loader style={styles.screenLoader} size="large" />
           ) : (
             <EmptyState
-              icon="bar-chart-outline"
               title="No team to show"
               subtitle="Workload views are available to Team Leads and Managers."
             />

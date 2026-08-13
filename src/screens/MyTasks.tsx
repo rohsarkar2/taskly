@@ -160,7 +160,7 @@ const MyTasks: React.FC<MyTasksScreenProps> = ({ navigation }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={error ? "cloud-offline-outline" : "sparkles-outline"}
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={
                   error
                     ? "Couldn't load your tasks"

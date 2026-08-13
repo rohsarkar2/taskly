@@ -225,7 +225,7 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
                 </TouchableOpacity>
               ))
             ) : (
-              <Text style={styles.empty}>Not on any projects yet.</Text>
+              <EmptyState compact title="Not on any projects yet" />
             )}
           </View>
 
@@ -246,7 +246,7 @@ const TeamMemberDetails: React.FC<TeamMemberDetailsScreenProps> = ({
               />
             ))
           ) : (
-            <Text style={styles.empty}>No open tasks right now.</Text>
+            <EmptyState compact title="No open tasks right now" />
           )}
         </ScrollView>
       </WhiteContainer>

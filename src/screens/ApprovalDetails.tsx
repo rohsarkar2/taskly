@@ -256,7 +256,7 @@ const ApprovalDetails: React.FC<ApprovalDetailsScreenProps> = ({
                   />
                 ))
               ) : (
-                <Text style={styles.detailLabel}>No activity yet</Text>
+                <EmptyState compact title="No activity yet" />
               )}
             </View>
           </View>

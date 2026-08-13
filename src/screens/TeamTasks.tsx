@@ -144,7 +144,7 @@ const TeamTasks: React.FC<TeamTasksScreenProps> = ({ navigation }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={error ? "cloud-offline-outline" : "people-outline"}
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={error ? "Couldn't load team tasks" : "No team tasks here"}
                 subtitle={
                   error ??

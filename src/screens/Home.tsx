@@ -12,6 +12,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   Avatar,
   Container,
+  EmptyState,
   Header,
   Loader,
   SectionHeader,
@@ -279,7 +280,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             ) : todaysTasks.length > 0 ? (
               todaysTasks.slice(0, 3).map(renderTask)
             ) : (
-              <Text style={styles.empty}>Nothing due today</Text>
+              <EmptyState compact title="Nothing due today" />
             )}
           </View>
 
@@ -291,7 +292,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
             ) : upcomingTasks.length > 0 ? (
               upcomingTasks.slice(0, 3).map(renderTask)
             ) : (
-              <Text style={styles.empty}>No upcoming deadlines</Text>
+              <EmptyState compact title="No upcoming deadlines" />
             )}
           </View>
 
@@ -313,7 +314,7 @@ const Home: React.FC<HomeScreenProps> = ({ navigation }) => {
                     />
                   ))
               ) : (
-                <Text style={styles.empty}>No activity yet</Text>
+                <EmptyState compact title="No activity yet" />
               )}
             </View>
           </View>

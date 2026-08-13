@@ -226,9 +226,8 @@ const Notifications: React.FC<NotificationsScreenProps> = ({ navigation }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={
-                  error ? "cloud-offline-outline" : "notifications-off-outline"
-                }
+                illustration="notifications"
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={error ? "Couldn't load notifications" : "Nothing here"}
                 subtitle={
                   error ??

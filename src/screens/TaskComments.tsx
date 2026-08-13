@@ -213,7 +213,6 @@ const TaskComments: React.FC<TaskCommentsScreenProps> = ({ route }) => {
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
               <EmptyState
-                icon="chatbubbles-outline"
                 title="No comments yet"
                 subtitle="Ask a question or share an update on this task."
               />

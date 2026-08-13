@@ -96,7 +96,7 @@ const TaskActivity: React.FC<TaskActivityScreenProps> = ({ route }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={error ? "cloud-offline-outline" : "time-outline"}
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={error ? "Couldn't load activity" : "No activity yet"}
                 subtitle={
                   error ?? "Every change to this task will be recorded here."

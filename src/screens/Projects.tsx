@@ -118,7 +118,7 @@ const Projects: React.FC<ProjectsScreenProps> = ({ navigation }) => {
               <Loader size="large" />
             ) : (
               <EmptyState
-                icon={error ? "cloud-offline-outline" : "folder-open-outline"}
+                icon={error ? "cloud-offline-outline" : undefined}
                 title={
                   error
                     ? "Couldn't load projects"
