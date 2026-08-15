@@ -11,6 +11,8 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Colors from "../configs/Colors";
 import Constant from "../configs/Constant";
+import { BadgeMeta } from "../utils/Formatters";
+import Badge from "./Badge";
 
 export type SheetOption = {
   key: string;
@@ -18,6 +20,7 @@ export type SheetOption = {
   description?: string;
   icon?: string;
   color?: string;
+  badge?: BadgeMeta;
 };
 
 type OptionSheetProps = {
@@ -86,9 +89,16 @@ const OptionSheet: React.FC<OptionSheetProps> = ({
                 ) : null}
 
                 <View style={styles.optionText}>
-                  <Text style={styles.optionLabel}>{option.label}</Text>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.optionLabel} numberOfLines={1}>
+                      {option.label}
+                    </Text>
+                    {option.badge ? (
+                      <Badge meta={option.badge} size="small" />
+                    ) : null}
+                  </View>
                   {option.description ? (
-                    <Text style={styles.optionDescription}>
+                    <Text style={styles.optionDescription} numberOfLines={1}>
                       {option.description}
                     </Text>
                   ) : null}
@@ -172,7 +182,14 @@ const styles = StyleSheet.create({
   optionText: {
     flex: 1,
   },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   optionLabel: {
+    // Shrinks so a long name never pushes the badge out of the row.
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: "500",
     color: Colors.black,

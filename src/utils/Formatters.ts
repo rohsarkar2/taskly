@@ -84,16 +84,24 @@ const PROJECT_STATUS_META: Record<ProjectStatus, BadgeMeta> = {
   },
 };
 
+/**
+ * One hue per rung of the hierarchy — slate, blue, violet — so the three read
+ * apart at a glance.
+ *
+ * None of them may use `Colors.secondary`: that is the highlight fill for a
+ * selected row in OptionSheet and the surface of the workflow card, and a badge
+ * sharing it disappears into the background.
+ */
 const USER_ROLE_META: Record<UserRole, BadgeMeta> = {
   "team-member": {
     label: "Team Member",
-    color: Colors.lightFont,
-    background: Colors.leaderboardBorderVeryLight,
+    color: Colors.secondaryFont,
+    background: Colors.neutralSoft,
   },
   "team-lead": {
     label: "Team Lead",
-    color: Colors.primary,
-    background: Colors.secondary,
+    color: Colors.info,
+    background: Colors.infoSoft,
   },
   manager: {
     label: "Manager",

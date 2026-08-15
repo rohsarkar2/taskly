@@ -67,4 +67,9 @@ export type ProjectMemberModel = {
   avatar: string;
   designation: string;
   projectRole: ProjectRole;
+  /**
+   * Whether the caller may assign a task to this person. Resolved server side
+   * against the role hierarchy, so the app never reimplements it.
+   */
+  assignable: boolean;
 };

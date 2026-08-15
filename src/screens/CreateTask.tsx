@@ -28,9 +28,9 @@ import {
 import type { SheetOption } from "../components";
 import Colors from "../configs/Colors";
 import {
+  ProjectDetailsModel,
   ProjectMemberModel,
   ProjectModel,
-  ProjectWorkflowModel,
 } from "../models/project";
 import { TaskPriority } from "../models/task";
 import { CreateTaskScreenProps } from "../navigation/NavigationTypes";
@@ -41,12 +41,13 @@ import {
   formatDate,
   getAvatarColor,
   getTaskPriorityMeta,
+  getUserRoleMeta,
 } from "../utils/Formatters";
 import {
   mapApiProject,
+  mapApiProjectDetails,
   mapApiProjectMember,
   mapApiTask,
-  mapApiWorkflow,
 } from "../utils/Mappers";
 
 type SheetKind = "project" | "priority" | "assignee" | null;
@@ -72,7 +73,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
 
   const [myProjects, setMyProjects] = useState<ProjectModel[]>([]);
   const [members, setMembers] = useState<ProjectMemberModel[]>([]);
-  const [workflow, setWorkflow] = useState<ProjectWorkflowModel | null>(null);
+  const [details, setDetails] = useState<ProjectDetailsModel | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -146,7 +147,7 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
   useEffect(() => {
     if (!projectId) {
       setMembers([]);
-      setWorkflow(null);
+      setDetails(null);
       return;
     }
 
@@ -158,16 +159,18 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
           ProjectService.getProjectMembers(projectId),
           ProjectService.getProjectDetails(projectId),
         ]);
+
+        console.log(membersResponse, detailsResponse);
         if (!active) return;
 
         setMembers(
           (membersResponse?.data?.members ?? []).map(mapApiProjectMember),
         );
-        setWorkflow(mapApiWorkflow(detailsResponse?.data?.workflow));
+        setDetails(mapApiProjectDetails(detailsResponse?.data));
       } catch {
         if (active) {
           setMembers([]);
-          setWorkflow(null);
+          setDetails(null);
         }
       }
     })();
@@ -177,14 +180,44 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
     };
   }, [projectId]);
 
-  const project = myProjects.find((item) => item.id === projectId);
+  const workflow = details?.workflow ?? null;
+  const project =
+    details?.project ?? myProjects.find((item) => item.id === projectId);
   const assignee = members.find((member) => member.id === assigneeId);
 
-  // A plain member may only assign work to themselves.
-  const canAssignOthers =
-    project?.projectRole === "manager" || project?.projectRole === "team-lead";
+  /**
+   * The API resolves the role hierarchy per member and answers with
+   * `assignable`, so that rule lives in one place instead of being mirrored
+   * here. You are always in the list — a task can be assigned to yourself
+   * whatever your role.
+   */
+  const assignableMembers = members.filter(
+    (member) => member.assignable || member.id === user?.id,
+  );
 
-  console.log(canAssignOthers);
+  console.log(assignableMembers);
+
+  const canAssignOthers = assignableMembers.some(
+    (member) => member.id !== user?.id,
+  );
+
+  // Switching project can leave someone selected who isn't on it, or isn't
+  // assignable there — drop back to yourself rather than submitting a 403.
+  useEffect(() => {
+    if (isEditing || members.length === 0) {
+      return;
+    }
+
+    const stillAssignable = members.some(
+      (member) =>
+        member.id === assigneeId &&
+        (member.assignable || member.id === user?.id),
+    );
+
+    if (!stillAssignable) {
+      setAssigneeId(user?.id ?? "");
+    }
+  }, [members, assigneeId, isEditing, user?.id]);
 
   const projectOptions: SheetOption[] = myProjects.map((item) => ({
     key: item.id,
@@ -193,14 +226,11 @@ const CreateTask: React.FC<CreateTaskScreenProps> = ({ navigation, route }) => {
     color: getAvatarColor(item.id),
   }));
 
-  const assigneeOptions: SheetOption[] = (
-    canAssignOthers
-      ? members
-      : members.filter((member) => member.id === user?.id)
-  ).map((member) => ({
+  const assigneeOptions: SheetOption[] = assignableMembers.map((member) => ({
     key: member.id,
     label: member.name,
-    description: member.designation,
+    description: member.designation || member.email,
+    badge: getUserRoleMeta(member.role),
     icon: "person-outline",
   }));
 

@@ -218,12 +218,13 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
     name?: string,
     image?: string,
     fallback?: string,
+    ifApprover?: boolean,
   ) => (
     <View style={styles.personRow}>
       <Text style={styles.personLabel}>{label}</Text>
       {name ? (
         <View style={styles.personValue}>
-          <Avatar name={name} image={image} size={30} />
+          {/* {!ifApprover && <Avatar name={name} image={image} size={30} />} */}
           <View style={styles.personText}>
             <Text style={styles.personName}>{name}</Text>
           </View>
@@ -468,10 +469,13 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
                 // Joining unpopulated approvers would render a bare ", ".
                 namedApprovers.map((person) => person.name).join(", ") ||
                   undefined,
-                namedApprovers.length === 1 ? namedApprovers[0].image : undefined,
+                namedApprovers.length === 1
+                  ? namedApprovers[0].image
+                  : undefined,
                 task.requiresApproval
                   ? "Anyone who can approve"
-                  : "No approval needed"
+                  : "No approval needed",
+                true,
               )}
             </View>
           </View>
@@ -572,14 +576,16 @@ const TaskDetails: React.FC<TaskDetailsScreenProps> = ({
             />
             <View style={styles.activityCard}>
               {activity.length > 0 ? (
-                activity.slice(0, 4).map((item, index, list) => (
-                  <TimelineItem
-                    key={item.id}
-                    item={item}
-                    isLast={index === list.length - 1}
-                    showDate
-                  />
-                ))
+                activity
+                  .slice(0, 4)
+                  .map((item, index, list) => (
+                    <TimelineItem
+                      key={item.id}
+                      item={item}
+                      isLast={index === list.length - 1}
+                      showDate
+                    />
+                  ))
               ) : (
                 <EmptyState compact title="No activity yet" />
               )}

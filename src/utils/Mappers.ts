@@ -177,7 +177,9 @@ export const mapDashboardTask = (apiTask: any): DashboardTaskModel => {
 const toCount = (value: any): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
-export const mapDashboardSummary = (apiSummary: any): DashboardSummaryModel => ({
+export const mapDashboardSummary = (
+  apiSummary: any,
+): DashboardSummaryModel => ({
   assignedTasks: toCount(apiSummary?.assignedTasks),
   pendingTasks: toCount(apiSummary?.pendingTasks),
   inProgressTasks: toCount(apiSummary?.inProgressTasks),
@@ -375,6 +377,9 @@ export const mapApiProjectMember = (apiMember: any): ProjectMemberModel => ({
   avatar: apiMember?.avatar ?? apiMember?.image ?? "",
   designation: apiMember?.designation ?? apiMember?.jobTitle ?? "",
   projectRole: mapApiProjectRole(apiMember?.projectRole),
+  // Absent on a response that predates the flag — stay permissive there and let
+  // the API reject the assignment, rather than hiding everyone.
+  assignable: apiMember?.assignable !== false,
 });
 
 /** Normalises a task from any of the employee task endpoints. */
@@ -463,8 +468,7 @@ export const mapApiComment = (apiComment: any): CommentModel => {
       ? {
           id: authorId,
           name: apiComment?.authorName ?? apiComment?.author?.name ?? "",
-          image:
-            apiComment?.authorAvatar ?? apiComment?.author?.avatar ?? "",
+          image: apiComment?.authorAvatar ?? apiComment?.author?.avatar ?? "",
         }
       : null,
     mentions: (apiComment?.mentions ?? [])
@@ -518,9 +522,7 @@ const NOTIFICATION_CATEGORY: Record<string, NotificationCategory> = {
 };
 
 /** Falls back to the type's prefix so unknown types still land in a tab. */
-export const mapApiNotificationCategory = (
-  type: any,
-): NotificationCategory => {
+export const mapApiNotificationCategory = (type: any): NotificationCategory => {
   const known = NOTIFICATION_CATEGORY[type];
   if (known) {
     return known;

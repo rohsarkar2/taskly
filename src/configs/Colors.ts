@@ -35,6 +35,7 @@ const Colors = {
   dangerSoft: "#FEE2E2",
   info: "#3B82F6",
   infoSoft: "#DBEAFE",
+  neutralSoft: "#E5E7EB",
 
   // TASK STATUS COLORS
   statusToDo: "#6B7280",
